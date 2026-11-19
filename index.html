@@ -2,8 +2,10 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StagePilot – Stages & Alternances IA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#0A1628" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>StagePilot V2 – Stages & Alternances IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script>
@@ -32,7 +34,7 @@
     @media print {
       .no-print { display: none !important; }
       body { background: #fff !important; }
-      .print-cv { border: none !important; box-shadow: none !important; padding: 0 !important; }
+      .print-cv { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
     }
   </style>
 </head>
@@ -86,10 +88,14 @@ const defaultDB = {
   selectedOfferId: null,
   currentUserId: null,
   filters: { q: '', city: '', sector: '', level: '', contract: '' },
+  aiTab: 'coach', // coach | interview | quiz
   aiMode: 'chat',
+  cvTheme: 'startup', // startup | clean
   aiMessages: [
-    { role: 'ai', text: 'Bonjour ! Je suis ton assistant StagePilot. Choisis un outil (conseil, lettre, entretien, correction) et pose ta question.' }
+    { role: 'ai', text: 'Bonjour ! Je suis ton assistant StagePilot V2. Utilise le Coach IA, lance le Simulateur d’entretien ou fais le Quiz d’orientation !' }
   ],
+  sim: { step: 0, sector: 'Numérique & Tech', level: 'Lycée', history: [] },
+  quiz: { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null },
   users: [
     {
       id: 'u_lucas', role: 'CANDIDATE', email: 'lucas.demo@stagepilot.fr',
@@ -111,7 +117,8 @@ const defaultDB = {
     { id: 'o2', companyId: 'u_pro', companyName: 'Studio Créa (Démo)', title: 'Alternant(e) Développeur Junior', city: 'Paris', sector: 'Numérique & Tech', level: 'BTS / Bac+2', contract: 'ALTERNANCE', duration: '12 mois', isDemo: true, desc: 'Création d’interfaces web modernes en équipe avec un tuteur dédié.' },
     { id: 'o3', companyId: 'u_pro', companyName: 'Écho Média (Démo)', title: 'Chargé(e) de Communication Digitale', city: 'Bordeaux', sector: 'Marketing & Communication', level: 'Licence / Bac+3', contract: 'STAGE', duration: '4 mois', isDemo: true, desc: 'Gestion des réseaux sociaux, création visuelle et suivi des campagnes.' },
     { id: 'o4', companyId: 'u_pro', companyName: 'Horizon Client (Démo)', title: 'Immersion Relation Client', city: 'Marseille', sector: 'Commerce & Relation Client', level: 'Collège / Lycée', contract: 'IMMERSION', duration: '5 jours', isDemo: true, desc: 'Découverte concrète du conseil client et des outils numériques.' },
-    { id: 'o5', companyId: 'u_pro', companyName: 'DataPulse (Démo)', title: 'Premier Emploi – Assistant Data', city: 'Toulouse', sector: 'Numérique & Tech', level: 'Master / Bac+5', contract: 'PREMIER_EMPLOI', duration: 'CDI', isDemo: true, desc: 'Analyse de données, tableaux de bord et automatisation interne.' }
+    { id: 'o5', companyId: 'u_pro', companyName: 'DataPulse (Démo)', title: 'Premier Emploi – Assistant Data', city: 'Toulouse', sector: 'Numérique & Tech', level: 'Master / Bac+5', contract: 'PREMIER_EMPLOI', duration: 'CDI', isDemo: true, desc: 'Analyse de données, tableaux de bord et automatisation interne.' },
+    { id: 'o6', companyId: 'u_pro', companyName: 'PixelLab (Démo)', title: 'Stage UX/UI & Création Graphique', city: 'Nantes', sector: 'Design & Création', level: 'BTS / Bac+2', contract: 'STAGE', duration: '2 mois', isDemo: true, desc: 'Réalisation de maquettes mobiles, icônes modernes et tests utilisateurs.' }
   ],
   saved: [],
   applications: []
@@ -121,7 +128,16 @@ let db = loadDB();
 function loadDB() {
   try {
     const raw = localStorage.getItem(DB_KEY);
-    return raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(defaultDB));
+    if (!raw) return JSON.parse(JSON.stringify(defaultDB));
+    const parsed = JSON.parse(raw);
+    return {
+      ...JSON.parse(JSON.stringify(defaultDB)),
+      ...parsed,
+      sim: parsed.sim || JSON.parse(JSON.stringify(defaultDB.sim)),
+      quiz: parsed.quiz || JSON.parse(JSON.stringify(defaultDB.quiz)),
+      aiTab: parsed.aiTab || 'coach',
+      cvTheme: parsed.cvTheme || 'startup'
+    };
   } catch { return JSON.parse(JSON.stringify(defaultDB)); }
 }
 function saveDB() { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
@@ -142,6 +158,11 @@ function go(page, offerId = null) {
   saveDB();
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function openAssistantTab(tab) {
+  db.aiTab = tab;
+  go('assistant');
 }
 
 function toast(msg) {
@@ -166,6 +187,130 @@ function runLocalAI(mode, prompt, level, user) {
     return `✨ Version professionnelle (${lvl}) :\n« Bonjour,\nActuellement en ${lvl}, je me permets de vous contacter au sujet de : ${prompt}. Je reste disponible pour un échange.\nBien cordialement,\n${name} »`;
   }
   return `💡 Conseil StagePilot (${lvl}) :\nPour « ${prompt} » :\n• Personnalisez les 2 premières phrases de votre message.\n• Mettez en avant vos atouts (${skills}).\n• Relancez poliment après 5 jours ouvrés.`;
+}
+
+// Simulateur d'entretien V2
+const SIM_QUESTIONS = [
+  '1/4 — Présentez-vous en quelques phrases : quelle est votre formation et qu’est-ce qui vous motive ?',
+  '2/4 — Pourquoi avez-vous envie de rejoindre une entreprise dans ce secteur ?',
+  '3/4 — Racontez un projet (scolaire, sport ou stage) où vous avez travaillé en équipe ou résolu un problème.',
+  '4/4 — L’entretien touche à sa fin : quelle question souhaitez-vous poser au recruteur ?'
+];
+
+function evaluateSimAnswer(step, answer, level) {
+  const txt = answer.trim().toLowerCase();
+  const words = txt.split(/\s+/).filter(Boolean).length;
+  let score = 55;
+  const tips = [];
+
+  if (words >= 12) score += 15; else tips.push('Développez un peu plus votre réponse (visez 2 à 4 phrases).');
+  if (words >= 25) score += 10;
+
+  if (step === 0 && /(école|lycée|collège|bts|licence|master|étud|stage|motiv|passion|apprendre)/.test(txt)) score += 15;
+  else if (step === 0) tips.push(`Mentionnez clairement votre niveau actuel (${level}) et ce que vous voulez apprendre.`);
+
+  if (step === 1 && /(entreprise|équipe|projet|secteur|métier|découvrir|progresser)/.test(txt)) score += 15;
+  else if (step === 1) tips.push('Reliez votre envie à ce que fait concrètement l’entreprise.');
+
+  if (step === 2 && /(équipe|groupe|aidé|créé|organisé|réussi|problème|solution|sport)/.test(txt)) score += 15;
+  else if (step === 2) tips.push('Donnez un exemple précis : quel était votre rôle et quel a été le résultat ?');
+
+  if (step === 3 && (txt.includes('?') || /(semaine|journée|outil|équipe|tuteur|mission)/.test(txt))) score += 18;
+  else if (step === 3) tips.push('Posez toujours une vraie question ouverte (ex : « À quoi ressemble une journée type ? »).');
+
+  score = Math.min(98, score);
+  const badge = score >= 80 ? '🌟 Excellente réponse !' : score >= 68 ? '👍 Bonne base !' : '💡 À renforcer';
+  const feedback = tips.length ? `${badge} Conseil : ${tips.join(' ')}` : `${badge} Réponse claire, structurée et adaptée à un recruteur.`;
+  return { score, feedback };
+}
+
+function submitSimAnswer(e) {
+  e.preventDefault();
+  const inp = document.getElementById('simAnswer');
+  const answer = inp.value.trim();
+  if (!answer) return;
+  const step = db.sim.step;
+  const ev = evaluateSimAnswer(step, answer, db.sim.level);
+  db.sim.history.push({ q: SIM_QUESTIONS[step], a: answer, score: ev.score, feedback: ev.feedback });
+  db.sim.step = step + 1;
+  saveDB();
+  render();
+}
+
+function resetSim() {
+  db.sim.step = 0;
+  db.sim.history = [];
+  saveDB();
+  render();
+}
+
+// Quiz Orientation V2
+const QUIZ_QUESTIONS = [
+  {
+    q: '1/4 — Quand tu as du temps libre, qu’est-ce que tu préfères faire ?',
+    opts: [
+      ['tech', 'Bidouiller sur ordi/téléphone, comprendre comment marchent les applis'],
+      ['design', 'Dessiner, faire du montage vidéo ou soigner l’esthétique'],
+      ['comm', 'Créer des posts, écrire, animer des réseaux sociaux'],
+      ['commerce', 'Discuter, conseiller les gens, organiser ou vendre']
+    ]
+  },
+  {
+    q: '2/4 — Quel environnement te donne le plus envie ?',
+    opts: [
+      ['tech', 'Un bureau ou startup tech avec des projets numériques'],
+      ['design', 'Un studio créatif où l’on imagine de nouveaux visuels'],
+      ['comm', 'Une agence média, culturelle ou événementielle'],
+      ['commerce', 'Un lieu vivant au contact direct des clients']
+    ]
+  },
+  {
+    q: '3/4 — Ton plus grand point fort selon tes amis ?',
+    opts: [
+      ['tech', 'Logique, curieux(se) et débrouillard(e)'],
+      ['design', 'Créatif(ve) et attentif(ve) aux détails'],
+      ['comm', 'À l’aise à l’écrit et plein(e) d’idées'],
+      ['commerce', 'Sociable, à l’écoute et convaincant(e)']
+    ]
+  },
+  {
+    q: '4/4 — Ce que tu veux surtout apprendre pendant ton stage :',
+    opts: [
+      ['tech', 'Coder, automatiser ou gérer des outils numériques'],
+      ['design', 'Utiliser des logiciels de design et créer des maquettes'],
+      ['comm', 'Préparer des campagnes et gérer une image de marque'],
+      ['commerce', 'Apprendre la relation client et le travail sur le terrain']
+    ]
+  }
+];
+
+const QUIZ_META = {
+  tech: { sector: 'Numérique & Tech', jobs: 'Assistant Développeur Web, Support IT, Découverte Data & IA', desc: 'Tu aimes comprendre, résoudre et construire des outils concrets.' },
+  design: { sector: 'Design & Création', jobs: 'Stage UX/UI Design, Graphisme, Montage & Création Visuelle', desc: 'Tu as l’œil pour les belles interfaces et les idées visuelles.' },
+  comm: { sector: 'Marketing & Communication', jobs: 'Chargé(e) de Communication, Réseaux Sociaux, Création de Contenu', desc: 'Tu sais faire passer des messages et capter l’attention.' },
+  commerce: { sector: 'Commerce & Relation Client', jobs: 'Immersion Relation Client, Conseiller(ère) Vente, Gestion de Projet', desc: 'Tu es à l’aise avec l’humain et le contact concret.' }
+};
+
+function pickQuizOption(cat) {
+  db.quiz.scores[cat] = (db.quiz.scores[cat] || 0) + 1;
+  db.quiz.step += 1;
+  if (db.quiz.step >= QUIZ_QUESTIONS.length) {
+    const best = Object.entries(db.quiz.scores).sort((a, b) => b[1] - a[1])[0][0];
+    db.quiz.result = best;
+  }
+  saveDB();
+  render();
+}
+
+function resetQuiz() {
+  db.quiz = { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null };
+  saveDB();
+  render();
+}
+
+function launchRecommendedOffers(sector) {
+  db.filters = { q: '', city: '', sector, level: '', contract: '' };
+  go('offers');
 }
 
 function renderOffersList() {
@@ -201,21 +346,51 @@ function renderOffersList() {
         <button onclick="applyOffer('${o.id}')" class="flex-1 py-2 rounded-xl ${hasApplied?'bg-emerald-50 text-emerald-700':'bg-electric-500 text-white'} text-xs font-semibold">${hasApplied?'✓ Candidaté':'Candidater'}</button>
       </div>
     </div>`;
-  }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre trouvée.</div>';
+  }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre trouvée. <button onclick="db.filters={q:\'\',city:\'\',sector:\'\',level:\'\',contract:\'\'};saveDB();render()" class="text-electric-500 underline ml-1">Réinitialiser</button></div>';
 }
 
 function renderCVPreview() {
   const box = document.getElementById('cvPreviewBox');
   if (!box) return;
   const cvUser = currentUser() || db.users[0];
-  box.innerHTML = `
-    <div class="border-b-2 border-navy-900 pb-3">
-      <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
-      <p class="text-xs font-semibold text-electric-500">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
-    </div>
-    <div><div class="text-[11px] font-bold uppercase text-slate-500">Profil</div><p class="text-xs mt-1">${esc(cvUser.summary)}</p></div>
-    <div><div class="text-[11px] font-bold uppercase text-slate-500">Compétences</div><div class="flex flex-wrap gap-1 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2 py-0.5 rounded bg-slate-100 text-xs">${esc(s.trim())}</span>`).join('')}</div></div>
-    <div><div class="text-[11px] font-bold uppercase text-slate-500">Expériences</div>${(cvUser.experiences||[]).map(e=>`<div class="mt-2"><div class="text-xs font-bold">${esc(e.title)} – ${esc(e.org)} (${esc(e.period)})</div><p class="text-[11px] text-slate-600">${esc(e.desc)}</p></div>`).join('')}</div>`;
+  const initials = (cvUser.fullName || 'SP').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const expHtml = (cvUser.experiences || []).map((e, idx) => `
+    <div class="mt-2 flex justify-between gap-2">
+      <div>
+        <div class="text-xs font-bold text-navy-900">${esc(e.title)} – ${esc(e.org)} <span class="font-normal text-slate-500">(${esc(e.period)})</span></div>
+        <p class="text-[11px] text-slate-600">${esc(e.desc)}</p>
+      </div>
+      <button onclick="removeExp(${idx})" class="no-print text-[10px] text-red-500 shrink-0">✕</button>
+    </div>`).join('');
+
+  if (db.cvTheme === 'startup') {
+    box.innerHTML = `
+      <div class="overflow-hidden rounded-xl border border-slate-200">
+        <div class="bg-navy-900 text-white p-5 flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-electric-500 flex items-center justify-center font-extrabold text-lg shrink-0">${esc(initials)}</div>
+          <div>
+            <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
+            <p class="text-xs text-electric-400 font-semibold">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
+          </div>
+        </div>
+        <div class="p-5 space-y-4 bg-white">
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">À propos</div><p class="text-xs mt-1 text-slate-700 leading-relaxed">${esc(cvUser.summary)}</p></div>
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">Compétences clés</div><div class="flex flex-wrap gap-1.5 mt-1.5">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2.5 py-0.5 rounded-full bg-blue-50 text-navy-900 text-[11px] font-semibold">${esc(s.trim())}</span>`).join('')}</div></div>
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">Expériences & Projets</div>${expHtml || '<p class="text-xs text-slate-400 mt-1">Ajoutez une expérience ou un projet scolaire.</p>'}</div>
+        </div>
+      </div>`;
+  } else {
+    box.innerHTML = `
+      <div class="space-y-4">
+        <div class="border-b-2 border-navy-900 pb-3">
+          <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
+          <p class="text-xs font-semibold text-electric-500">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
+        </div>
+        <div><div class="text-[11px] font-bold uppercase text-slate-500">Profil</div><p class="text-xs mt-1">${esc(cvUser.summary)}</p></div>
+        <div><div class="text-[11px] font-bold uppercase text-slate-500">Compétences</div><div class="flex flex-wrap gap-1 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2 py-0.5 rounded bg-slate-100 text-xs">${esc(s.trim())}</span>`).join('')}</div></div>
+        <div><div class="text-[11px] font-bold uppercase text-slate-500">Expériences</div>${expHtml}</div>
+      </div>`;
+  }
 }
 
 function render() {
@@ -229,32 +404,38 @@ function render() {
 
   if (db.page === 'home') {
     app.innerHTML = `
-      <div class="space-y-5 fade">
+      <div class="space-y-4 fade">
         <div class="bg-navy-900 text-white rounded-2xl p-6 space-y-4">
           <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-800 text-electric-400 text-[11px] font-semibold">
-            ✨ Plateforme 15–25 ans • Budget 0 €
+            ✨ StagePilot V2 • 15–25 ans • 0 €
           </span>
           <h1 class="text-2xl font-extrabold leading-tight">Ton stage ou ton alternance, <span class="text-electric-400">piloté par l’IA.</span></h1>
-          <p class="text-xs text-slate-300 leading-relaxed">Recherche ciblée, CV PDF en 2 minutes, coach IA selon ton niveau scolaire et suivi de tes candidatures.</p>
+          <p class="text-xs text-slate-300 leading-relaxed">Offres ciblées, 2 modèles de CV PDF, simulateur d’entretien IA et quiz d’orientation intégré.</p>
           <div class="flex flex-col sm:flex-row gap-2.5 pt-1">
             <button onclick="go('offers')" class="py-3 px-4 rounded-xl bg-electric-500 font-semibold text-sm">Explorer les offres</button>
             <button onclick="go('auth')" class="py-3 px-4 rounded-xl bg-white/10 font-semibold text-sm">${u ? 'Changer de compte' : 'Connexion / Inscription'}</button>
           </div>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button onclick="go('offers')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="font-bold text-sm text-electric-500">1. Offres ciblées</div>
-            <p class="text-xs text-slate-600 mt-1">Filtre par ville, secteur, niveau et contrat.</p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button onclick="openAssistantTab('quiz')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">🧭 Quiz Orientation</div>
+            <p class="text-[11px] text-slate-600 mt-1">Trouve quel secteur te correspond en 30 sec.</p>
+          </button>
+          <button onclick="openAssistantTab('interview')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">🎤 Simuler Entretien</div>
+            <p class="text-[11px] text-slate-600 mt-1">Entraîne-toi avec une note et des conseils IA.</p>
           </button>
           <button onclick="go('cv')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="font-bold text-sm text-electric-500">2. CV IA + Export PDF</div>
-            <p class="text-xs text-slate-600 mt-1">Crée et adapte ton CV gratuitement.</p>
+            <div class="text-xs font-extrabold text-electric-500">📄 2 Modèles CV PDF</div>
+            <p class="text-[11px] text-slate-600 mt-1">Crée et exporte ton CV gratuitement.</p>
           </button>
-          <button onclick="go('assistant')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="font-bold text-sm text-electric-500">3. Coach IA scolaire</div>
-            <p class="text-xs text-slate-600 mt-1">Lettres, entretiens et messages pro.</p>
+          <button onclick="go('company')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">🏢 Espace Entreprise</div>
+            <p class="text-[11px] text-slate-600 mt-1">Publie une annonce et gère tes candidats.</p>
           </button>
         </div>
+
         <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-900">
           <strong>Protection mineurs & RGPD :</strong> aucune date de naissance affichée publiquement. Les coordonnées directes des moins de 18 ans sont protégées côté entreprise.
         </div>
@@ -301,7 +482,7 @@ function render() {
     const saved = db.saved.filter(s => s.userId === u.id);
     const interviews = apps.filter(a => a.status === 'ENTRETIEN').length;
     app.innerHTML = `
-      <div class="space-y-5 fade">
+      <div class="space-y-4 fade">
         <div class="bg-navy-900 text-white rounded-2xl p-5 flex justify-between items-center">
           <div>
             <div class="text-xs text-electric-400 font-semibold">${esc(u.educationLevel || 'Compte Pro')} • ${esc(u.plan)}</div>
@@ -316,7 +497,9 @@ function render() {
           <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${db.offers.length}</div><div class="text-xs text-slate-500">Offres actives</div></div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Voir mon suivi de candidatures →</button>
+          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Suivi de mes candidatures →</button>
+          <button onclick="openAssistantTab('interview')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🎤 Lancer le simulateur d’entretien →</button>
+          <button onclick="openAssistantTab('quiz')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🧭 Faire le quiz d’orientation →</button>
           <button onclick="go('cv')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📄 Modifier / Exporter mon CV PDF →</button>
         </div>
       </div>`;
@@ -344,6 +527,7 @@ function render() {
             <select onchange="db.filters.sector=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
               <option value="">Tous secteurs</option>
               <option ${f.sector==='Numérique & Tech'?'selected':''}>Numérique & Tech</option>
+              <option ${f.sector==='Design & Création'?'selected':''}>Design & Création</option>
               <option ${f.sector==='Marketing & Communication'?'selected':''}>Marketing & Communication</option>
               <option ${f.sector==='Commerce & Relation Client'?'selected':''}>Commerce & Relation Client</option>
             </select>
@@ -394,6 +578,10 @@ function render() {
             <h1 class="text-lg font-bold">Créateur de CV IA</h1>
             <button onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-electric-500 text-white text-xs font-semibold">Exporter PDF</button>
           </div>
+          <div class="flex gap-2">
+            <button onclick="setCVTheme('startup')" class="flex-1 py-2 rounded-xl text-xs font-semibold border ${db.cvTheme==='startup'?'bg-navy-900 text-white border-navy-900':'bg-slate-50'}">Style Startup Bleu Nuit</button>
+            <button onclick="setCVTheme('clean')" class="flex-1 py-2 rounded-xl text-xs font-semibold border ${db.cvTheme==='clean'?'bg-navy-900 text-white border-navy-900':'bg-slate-50'}">Style Épuré Classique</button>
+          </div>
           <input value="${esc(cvUser.fullName)}" oninput="cvUserEdit('fullName',this.value)" placeholder="Nom" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <input value="${esc(cvUser.educationLevel)}" oninput="cvUserEdit('educationLevel',this.value)" placeholder="Formation" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <div class="flex gap-2">
@@ -404,17 +592,20 @@ function render() {
           <input value="${esc(cvUser.skills)}" oninput="cvUserEdit('skills',this.value)" placeholder="Compétences (virgules)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
           <button onclick="addExp()" class="text-xs font-semibold text-electric-500">+ Ajouter une expérience</button>
         </div>
-        <div id="cvPreviewBox" class="print-cv bg-white p-6 rounded-2xl border space-y-4"></div>
+        <div id="cvPreviewBox" class="print-cv bg-white p-4 rounded-2xl border"></div>
       </div>`;
     renderCVPreview();
   }
 
   else if (db.page === 'assistant') {
-    const modes = [['chat','Conseil'],['cover_letter','Lettre'],['interview','Entretien'],['fix_message','Corriger']];
-    app.innerHTML = `
-      <div class="bg-white rounded-2xl p-4 border space-y-3 fade">
+    const tabs = [['coach','💬 Coach IA'],['interview','🎤 Entretien'],['quiz','🧭 Orientation']];
+    let bodyHtml = '';
+
+    if (db.aiTab === 'coach') {
+      const modes = [['chat','Conseil'],['cover_letter','Lettre'],['interview','Questions'],['fix_message','Corriger']];
+      bodyHtml = `
         <div class="flex justify-between items-center gap-2">
-          <h1 class="text-lg font-bold">Assistant IA</h1>
+          <span class="text-xs font-semibold text-slate-500">Niveau scolaire :</span>
           <select id="aiLvl" class="px-2.5 py-1.5 rounded-xl border text-xs bg-slate-50">
             <option>Collège (3e)</option><option>Lycée</option><option>BTS / Bac+2</option><option>Licence / Master</option>
           </select>
@@ -422,13 +613,83 @@ function render() {
         <div class="flex flex-wrap gap-1.5">
           ${modes.map(([id,lbl])=>`<button onclick="db.aiMode='${id}';saveDB();render()" class="px-3 py-1.5 rounded-xl text-xs font-semibold ${db.aiMode===id?'bg-navy-900 text-white':'bg-slate-100'}">${lbl}</button>`).join('')}
         </div>
-        <div class="h-72 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
+        <div class="h-64 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
           ${db.aiMessages.map(m=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'bg-white border'}">${esc(m.text)}</div></div>`).join('')}
         </div>
         <form onsubmit="sendAI(event)" class="flex gap-2">
           <input id="aiInput" required placeholder="Votre question ou brouillon..." class="flex-1 px-3 py-2.5 rounded-xl border text-xs"/>
           <button class="px-4 py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Envoyer</button>
-        </form>
+        </form>`;
+    }
+
+    else if (db.aiTab === 'interview') {
+      const done = db.sim.step >= SIM_QUESTIONS.length;
+      const avg = db.sim.history.length ? Math.round(db.sim.history.reduce((s, x) => s + x.score, 0) / db.sim.history.length) : 0;
+      bodyHtml = `
+        <div class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-navy-900">Simulateur interactif (4 questions)</span>
+            <button onclick="resetSim()" class="text-xs text-electric-500 font-semibold">Recommencer</button>
+          </div>
+          <div class="space-y-2.5 max-h-72 overflow-y-auto">
+            ${db.sim.history.map(item => `
+              <div class="p-3 rounded-xl bg-slate-50 border space-y-1.5 text-xs">
+                <div class="font-bold text-navy-900">${esc(item.q)}</div>
+                <div class="text-slate-700 italic">« ${esc(item.a)} »</div>
+                <div class="p-2 rounded-lg bg-blue-50 text-navy-900"><strong>Note ${item.score}/100 :</strong> ${esc(item.feedback)}</div>
+              </div>
+            `).join('')}
+          </div>
+          ${!done ? `
+            <div class="p-3.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">${esc(SIM_QUESTIONS[db.sim.step])}</div>
+            <form onsubmit="submitSimAnswer(event)" class="space-y-2">
+              <textarea id="simAnswer" rows="3" required placeholder="Tapez votre réponse comme en vrai entretien..." class="w-full p-3 rounded-xl border text-xs"></textarea>
+              <button class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Valider ma réponse</button>
+            </form>
+          ` : `
+            <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
+              <div class="text-lg font-extrabold text-emerald-800">Score moyen : ${avg}/100 🎉</div>
+              <p class="text-xs text-emerald-900">Bravo ! Tu es prêt(e) à passer ton entretien réel.</p>
+              <button onclick="resetSim()" class="px-4 py-2 rounded-xl bg-navy-900 text-white text-xs font-semibold">Refaire une simulation</button>
+            </div>
+          `}
+        </div>`;
+    }
+
+    else if (db.aiTab === 'quiz') {
+      if (db.quiz.result) {
+        const res = QUIZ_META[db.quiz.result];
+        bodyHtml = `
+          <div class="p-5 rounded-2xl bg-navy-900 text-white space-y-3 text-center">
+            <div class="text-xs text-electric-400 font-bold uppercase">Résultat de ton orientation</div>
+            <div class="text-xl font-extrabold">${esc(res.sector)}</div>
+            <p class="text-xs text-slate-300">${esc(res.desc)}</p>
+            <div class="p-3 rounded-xl bg-navy-800 text-xs"><strong>Idées de stages/métiers :</strong><br/>${esc(res.jobs)}</div>
+            <div class="flex flex-col sm:flex-row gap-2 pt-2">
+              <button onclick="launchRecommendedOffers('${esc(res.sector)}')" class="flex-1 py-2.5 rounded-xl bg-electric-500 font-semibold text-xs">Voir les offres dans ce secteur</button>
+              <button onclick="resetQuiz()" class="py-2.5 px-4 rounded-xl bg-white/10 text-xs font-semibold">Refaire</button>
+            </div>
+          </div>`;
+      } else {
+        const qObj = QUIZ_QUESTIONS[db.quiz.step];
+        bodyHtml = `
+          <div class="space-y-3">
+            <div class="text-sm font-bold text-navy-900">${esc(qObj.q)}</div>
+            <div class="space-y-2">
+              ${qObj.opts.map(([cat, lbl]) => `
+                <button onclick="pickQuizOption('${cat}')" class="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-electric-500 hover:bg-blue-50 text-xs font-medium transition">${esc(lbl)}</button>
+              `).join('')}
+            </div>
+          </div>`;
+      }
+    }
+
+    app.innerHTML = `
+      <div class="bg-white rounded-2xl p-4 border space-y-3 fade">
+        <div class="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
+          ${tabs.map(([id,lbl])=>`<button onclick="db.aiTab='${id}';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.aiTab===id?'bg-white text-navy-900 shadow-sm':'text-slate-500'}">${lbl}</button>`).join('')}
+        </div>
+        ${bodyHtml}
       </div>`;
   }
 
@@ -586,6 +847,7 @@ function fillOfferCover(offerId) {
 function changeAppStatus(id, status) {
   const a = db.applications.find(x => x.id === id); if (a) { a.status = status; saveDB(); toast('Statut mis à jour'); }
 }
+function setCVTheme(t) { db.cvTheme = t; saveDB(); render(); }
 function cvUserEdit(field, val) {
   const target = currentUser() || db.users[0]; target[field] = val; saveDB();
   if (db.page === 'cv') renderCVPreview();
@@ -605,6 +867,10 @@ function addExp() {
   target.experiences = target.experiences || [];
   target.experiences.push({ title, org, period: '2026', desc: 'Missions réalisées avec l’équipe.' });
   saveDB(); renderCVPreview();
+}
+function removeExp(idx) {
+  const target = currentUser() || db.users[0];
+  if (Array.isArray(target.experiences)) { target.experiences.splice(idx, 1); saveDB(); renderCVPreview(); }
 }
 function sendAI(e) {
   e.preventDefault();
