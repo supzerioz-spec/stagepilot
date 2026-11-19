@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StagePilot – Stages & Alternances IA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    if (window.tailwind) {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              navy: { 900: '#0A1628', 800: '#122442', 700: '#1D355E' },
+              electric: { 400: '#3B82F6', 500: '#2563EB', 600: '#0055FF' }
+            }
+          }
+        }
+      };
+    }
+  </script>
+  <style>
+    body { background: #F8FAFC; color: #0A1628; font-family: system-ui, -apple-system, sans-serif; }
+    .bg-navy-900 { background-color: #0A1628; }
+    .bg-navy-800 { background-color: #122442; }
+    .bg-electric-500 { background-color: #2563EB; }
+    .text-electric-500 { color: #2563EB; }
+    .text-electric-400 { color: #3B82F6; }
+    .fade { animation: fadeUp .22s ease-out; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; }
+      .print-cv { border: none !important; box-shadow: none !important; padding: 0 !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="no-print sticky top-0 z-40 bg-navy-900 text-white border-b border-navy-800">
+    <div class="max-w-5xl mx-auto px-3 h-14 flex items-center justify-between">
+      <button onclick="go('home')" class="flex items-center gap-2 font-bold text-base">
+        <span class="w-7 h-7 rounded-lg bg-electric-500 flex items-center justify-center">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+        </span>
+        Stage<span class="text-electric-400">Pilot</span>
+      </button>
+      <div class="flex items-center gap-1.5 text-xs">
+        <button onclick="go('dashboard')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Bord</button>
+        <button onclick="go('applications')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Suivi</button>
+        <button onclick="go('company')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Pro</button>
+        <button onclick="go('premium')" class="px-2.5 py-1.5 rounded-lg bg-electric-500 font-semibold">Premium</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenu -->
+  <main id="app" class="flex-1 max-w-5xl w-full mx-auto px-3 py-5 pb-24"></main>
+
+  <!-- Barre inférieure mobile -->
+  <nav class="no-print fixed bottom-0 inset-x-0 z-50 bg-white border-t border-slate-200 px-1 py-1.5 flex justify-around items-center shadow-lg">
+    <button onclick="go('home')" data-nav="home" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
+      <i data-lucide="home" class="w-5 h-5"></i><span>Accueil</span>
+    </button>
+    <button onclick="go('offers')" data-nav="offers" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
+      <i data-lucide="search" class="w-5 h-5"></i><span>Recherche</span>
+    </button>
+    <button onclick="go('cv')" data-nav="cv" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
+      <i data-lucide="file-text" class="w-5 h-5"></i><span>CV</span>
+    </button>
+    <button onclick="go('assistant')" data-nav="assistant" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
+      <i data-lucide="sparkles" class="w-5 h-5"></i><span>Assistant IA</span>
+    </button>
+    <button onclick="go('profile')" data-nav="profile" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
+      <i data-lucide="user" class="w-5 h-5"></i><span>Profil</span>
+    </button>
+  </nav>
+
+<script>
+const DB_KEY = 'stagepilot_mobile_v2';
+
+const defaultDB = {
+  page: 'home',
+  selectedOfferId: null,
+  currentUserId: null,
+  filters: { q: '', city: '', sector: '', level: '', contract: '' },
+  aiMode: 'chat',
+  aiMessages: [
+    { role: 'ai', text: 'Bonjour ! Je suis ton assistant StagePilot. Choisis un outil (conseil, lettre, entretien, correction) et pose ta question.' }
+  ],
+  users: [
+    {
+      id: 'u_lucas', role: 'CANDIDATE', email: 'lucas.demo@stagepilot.fr',
+      fullName: 'Lucas Martin', birthDate: '2009-04-12', guardianEmail: 'parent.martin@exemple.fr',
+      city: 'Lyon', educationLevel: 'Lycée (Seconde / Première)', contractType: 'STAGE',
+      availability: 'Vacances / Juin 2026', plan: 'FREE',
+      summary: 'Lycéen sérieux et curieux à la recherche d’un stage de découverte en entreprise.',
+      skills: 'HTML/CSS, Travail en équipe, Communication, Pack Office',
+      experiences: [{ title: 'Stage observation 3e', org: 'Atelier Web Lyon', period: '2025', desc: 'Découverte des métiers du numérique.' }]
+    },
+    {
+      id: 'u_pro', role: 'COMPANY', email: 'rh@novatech.fr',
+      fullName: 'Claire Moreau (RH)', city: 'Lyon', plan: 'FREE',
+      company: { name: 'NovaTech Solutions (Démo)', sector: 'Numérique & Tech', city: 'Lyon', verified: true }
+    }
+  ],
+  offers: [
+    { id: 'o1', companyId: 'u_pro', companyName: 'NovaTech Solutions (Démo)', title: 'Stage découverte Métiers du Web', city: 'Lyon', sector: 'Numérique & Tech', level: 'Collège / Lycée', contract: 'STAGE', duration: '2 semaines', isDemo: true, desc: 'Immersion encadrée auprès de nos développeurs et designers UX/UI. Aucune expérience requise.' },
+    { id: 'o2', companyId: 'u_pro', companyName: 'Studio Créa (Démo)', title: 'Alternant(e) Développeur Junior', city: 'Paris', sector: 'Numérique & Tech', level: 'BTS / Bac+2', contract: 'ALTERNANCE', duration: '12 mois', isDemo: true, desc: 'Création d’interfaces web modernes en équipe avec un tuteur dédié.' },
+    { id: 'o3', companyId: 'u_pro', companyName: 'Écho Média (Démo)', title: 'Chargé(e) de Communication Digitale', city: 'Bordeaux', sector: 'Marketing & Communication', level: 'Licence / Bac+3', contract: 'STAGE', duration: '4 mois', isDemo: true, desc: 'Gestion des réseaux sociaux, création visuelle et suivi des campagnes.' },
+    { id: 'o4', companyId: 'u_pro', companyName: 'Horizon Client (Démo)', title: 'Immersion Relation Client', city: 'Marseille', sector: 'Commerce & Relation Client', level: 'Collège / Lycée', contract: 'IMMERSION', duration: '5 jours', isDemo: true, desc: 'Découverte concrète du conseil client et des outils numériques.' },
+    { id: 'o5', companyId: 'u_pro', companyName: 'DataPulse (Démo)', title: 'Premier Emploi – Assistant Data', city: 'Toulouse', sector: 'Numérique & Tech', level: 'Master / Bac+5', contract: 'PREMIER_EMPLOI', duration: 'CDI', isDemo: true, desc: 'Analyse de données, tableaux de bord et automatisation interne.' }
+  ],
+  saved: [],
+  applications: []
+};
+
+let db = loadDB();
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    return raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(defaultDB));
+  } catch { return JSON.parse(JSON.stringify(defaultDB)); }
+}
+function saveDB() { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function currentUser() { return db.users.find(u => u.id === db.currentUserId) || null; }
+function calcAge(dob) {
+  if (!dob) return null;
+  const d = new Date(dob), t = new Date();
+  let age = t.getFullYear() - d.getFullYear();
+  if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) age--;
+  return age;
+}
+function isMinor(u) { const a = calcAge(u?.birthDate); return a !== null && a < 18; }
+
+function go(page, offerId = null) {
+  db.page = page;
+  if (offerId) db.selectedOfferId = offerId;
+  saveDB();
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'fixed top-16 inset-x-4 max-w-md mx-auto z-50 bg-navy-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl text-center fade';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+function runLocalAI(mode, prompt, level, user) {
+  const lvl = level || user?.educationLevel || 'Lycée';
+  const name = user?.fullName || 'Prénom Nom';
+  const skills = user?.skills || 'sérieux, curiosité, esprit d’équipe';
+  if (mode === 'cover_letter') {
+    return `Objet : Candidature – ${prompt || 'Stage / Alternance'}\n\nMadame, Monsieur,\n\nActuellement en ${lvl}, je vous propose ma candidature pour ${prompt || 'un stage au sein de votre équipe'}.\n\nSérieux(se) et motivé(e), je maîtrise notamment : ${skills}. Je serais ravi(e) d’apprendre à vos côtés et de contribuer à vos projets.\n\nBien cordialement,\n${name}`;
+  }
+  if (mode === 'interview') {
+    return `🎯 Préparation entretien (${lvl}) :\n1. Présentez-vous en 30 sec : formation (${lvl}), motivation et atouts (${skills}).\n2. Expliquez ce qui vous attire dans l’entreprise.\n3. Posez 1 question à la fin : « À quoi ressemble une journée type ? »`;
+  }
+  if (mode === 'fix_message') {
+    return `✨ Version professionnelle (${lvl}) :\n« Bonjour,\nActuellement en ${lvl}, je me permets de vous contacter au sujet de : ${prompt}. Je reste disponible pour un échange.\nBien cordialement,\n${name} »`;
+  }
+  return `💡 Conseil StagePilot (${lvl}) :\nPour « ${prompt} » :\n• Personnalisez les 2 premières phrases de votre message.\n• Mettez en avant vos atouts (${skills}).\n• Relancez poliment après 5 jours ouvrés.`;
+}
+
+function renderOffersList() {
+  const box = document.getElementById('offersList');
+  if (!box) return;
+  const u = currentUser();
+  const f = db.filters;
+  const list = db.offers.filter(o =>
+    (!f.q || (o.title + o.desc + o.companyName).toLowerCase().includes(f.q.toLowerCase())) &&
+    (!f.city || o.city.toLowerCase().includes(f.city.toLowerCase())) &&
+    (!f.sector || o.sector === f.sector) &&
+    (!f.level || o.level === f.level) &&
+    (!f.contract || o.contract === f.contract)
+  );
+  box.innerHTML = list.map(o => {
+    const isSaved = u && db.saved.some(s => s.userId === u.id && s.offerId === o.id);
+    const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
+    return `
+    <div class="bg-white p-4 rounded-2xl border shadow-sm space-y-2.5">
+      <div class="flex justify-between items-start gap-2">
+        <div class="flex flex-wrap gap-1.5 items-center">
+          <span class="px-2 py-0.5 rounded-full bg-navy-900 text-white text-[10px] font-bold">${esc(o.contract)}</span>
+          ${o.isDemo ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">DÉMO</span>' : ''}
+          <span class="text-[11px] text-slate-500">${esc(o.level)}</span>
+        </div>
+        <button onclick="toggleSave('${o.id}')" class="px-2.5 py-1 rounded-lg border text-xs ${isSaved?'bg-blue-50 border-electric-500 text-electric-500 font-bold':'text-slate-400'}">${isSaved?'★ Sauvée':'☆ Sauver'}</button>
+      </div>
+      <div onclick="go('offer_detail','${o.id}')" class="font-bold text-base cursor-pointer">${esc(o.title)}</div>
+      <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.duration)}</div>
+      <p class="text-xs text-slate-600">${esc(o.desc)}</p>
+      <div class="flex gap-2 pt-1">
+        <button onclick="go('offer_detail','${o.id}')" class="flex-1 py-2 rounded-xl border text-xs font-semibold">Voir fiche</button>
+        <button onclick="applyOffer('${o.id}')" class="flex-1 py-2 rounded-xl ${hasApplied?'bg-emerald-50 text-emerald-700':'bg-electric-500 text-white'} text-xs font-semibold">${hasApplied?'✓ Candidaté':'Candidater'}</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre trouvée.</div>';
+}
+
+function renderCVPreview() {
+  const box = document.getElementById('cvPreviewBox');
+  if (!box) return;
+  const cvUser = currentUser() || db.users[0];
+  box.innerHTML = `
+    <div class="border-b-2 border-navy-900 pb-3">
+      <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
+      <p class="text-xs font-semibold text-electric-500">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
+    </div>
+    <div><div class="text-[11px] font-bold uppercase text-slate-500">Profil</div><p class="text-xs mt-1">${esc(cvUser.summary)}</p></div>
+    <div><div class="text-[11px] font-bold uppercase text-slate-500">Compétences</div><div class="flex flex-wrap gap-1 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2 py-0.5 rounded bg-slate-100 text-xs">${esc(s.trim())}</span>`).join('')}</div></div>
+    <div><div class="text-[11px] font-bold uppercase text-slate-500">Expériences</div>${(cvUser.experiences||[]).map(e=>`<div class="mt-2"><div class="text-xs font-bold">${esc(e.title)} – ${esc(e.org)} (${esc(e.period)})</div><p class="text-[11px] text-slate-600">${esc(e.desc)}</p></div>`).join('')}</div>`;
+}
+
+function render() {
+  const u = currentUser();
+  const app = document.getElementById('app');
+
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    const active = btn.dataset.nav === db.page || (db.page === 'offer_detail' && btn.dataset.nav === 'offers');
+    btn.className = `nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium ${active ? 'text-electric-500 bg-blue-50 font-semibold' : 'text-slate-500'}`;
+  });
+
+  if (db.page === 'home') {
+    app.innerHTML = `
+      <div class="space-y-5 fade">
+        <div class="bg-navy-900 text-white rounded-2xl p-6 space-y-4">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-800 text-electric-400 text-[11px] font-semibold">
+            ✨ Plateforme 15–25 ans • Budget 0 €
+          </span>
+          <h1 class="text-2xl font-extrabold leading-tight">Ton stage ou ton alternance, <span class="text-electric-400">piloté par l’IA.</span></h1>
+          <p class="text-xs text-slate-300 leading-relaxed">Recherche ciblée, CV PDF en 2 minutes, coach IA selon ton niveau scolaire et suivi de tes candidatures.</p>
+          <div class="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <button onclick="go('offers')" class="py-3 px-4 rounded-xl bg-electric-500 font-semibold text-sm">Explorer les offres</button>
+            <button onclick="go('auth')" class="py-3 px-4 rounded-xl bg-white/10 font-semibold text-sm">${u ? 'Changer de compte' : 'Connexion / Inscription'}</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button onclick="go('offers')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="font-bold text-sm text-electric-500">1. Offres ciblées</div>
+            <p class="text-xs text-slate-600 mt-1">Filtre par ville, secteur, niveau et contrat.</p>
+          </button>
+          <button onclick="go('cv')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="font-bold text-sm text-electric-500">2. CV IA + Export PDF</div>
+            <p class="text-xs text-slate-600 mt-1">Crée et adapte ton CV gratuitement.</p>
+          </button>
+          <button onclick="go('assistant')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="font-bold text-sm text-electric-500">3. Coach IA scolaire</div>
+            <p class="text-xs text-slate-600 mt-1">Lettres, entretiens et messages pro.</p>
+          </button>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-900">
+          <strong>Protection mineurs & RGPD :</strong> aucune date de naissance affichée publiquement. Les coordonnées directes des moins de 18 ans sont protégées côté entreprise.
+        </div>
+      </div>`;
+  }
+
+  else if (db.page === 'auth') {
+    app.innerHTML = `
+      <div class="max-w-md mx-auto bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 fade">
+        <h1 class="text-lg font-bold">Connexion rapide ou Inscription</h1>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="loginDemo('u_lucas')" class="py-2.5 px-3 rounded-xl bg-blue-50 text-electric-500 text-xs font-bold">Tester Candidat (Lucas, 17 ans)</button>
+          <button onclick="loginDemo('u_pro')" class="py-2.5 px-3 rounded-xl bg-navy-900 text-white text-xs font-bold">Tester Entreprise (NovaTech)</button>
+        </div>
+        <hr/>
+        <form onsubmit="registerUser(event)" class="space-y-3">
+          <div class="text-xs font-bold text-slate-700">Ou créer un nouveau compte :</div>
+          <select id="regRole" onchange="document.getElementById('candFields').style.display=this.value==='CANDIDATE'?'block':'none';document.getElementById('compFields').style.display=this.value==='COMPANY'?'block':'none';" class="w-full px-3 py-2 rounded-xl border text-sm bg-white">
+            <option value="CANDIDATE">Jeune (15–25 ans)</option>
+            <option value="COMPANY">Entreprise</option>
+          </select>
+          <input id="regName" required placeholder="Nom complet" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <input id="regEmail" type="email" required placeholder="Email" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <input id="regCity" required placeholder="Ville (ex: Lyon)" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <div id="candFields" class="space-y-2">
+            <label class="text-[11px] text-slate-500">Date de naissance (reste privée) :</label>
+            <input id="regDob" type="date" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+            <input id="regGuardian" type="email" placeholder="Email parent / référent (obligatoire si < 18 ans)" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+            <select id="regLevel" class="w-full px-3 py-2 rounded-xl border text-sm bg-white">
+              <option>Collège / Lycée</option><option>Terminale / Bac</option><option>BTS / Bac+2</option><option>Licence / Bac+3</option><option>Master / Bac+5</option>
+            </select>
+          </div>
+          <div id="compFields" style="display:none" class="space-y-2">
+            <input id="regCompName" placeholder="Nom de l'entreprise" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          </div>
+          <button class="w-full py-3 rounded-xl bg-electric-500 text-white font-semibold text-sm">Créer mon compte</button>
+        </form>
+      </div>`;
+  }
+
+  else if (db.page === 'dashboard') {
+    if (!u) return go('auth');
+    const apps = db.applications.filter(a => a.userId === u.id);
+    const saved = db.saved.filter(s => s.userId === u.id);
+    const interviews = apps.filter(a => a.status === 'ENTRETIEN').length;
+    app.innerHTML = `
+      <div class="space-y-5 fade">
+        <div class="bg-navy-900 text-white rounded-2xl p-5 flex justify-between items-center">
+          <div>
+            <div class="text-xs text-electric-400 font-semibold">${esc(u.educationLevel || 'Compte Pro')} • ${esc(u.plan)}</div>
+            <h1 class="text-xl font-bold">Bonjour ${esc(u.fullName)}</h1>
+          </div>
+          <button onclick="go('offers')" class="px-3.5 py-2 rounded-xl bg-electric-500 text-xs font-semibold">Offres</button>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${apps.length}</div><div class="text-xs text-slate-500">Candidatures</div></div>
+          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-emerald-600">${interviews}</div><div class="text-xs text-slate-500">Entretiens</div></div>
+          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-electric-500">${saved.length}</div><div class="text-xs text-slate-500">Sauvegardées</div></div>
+          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${db.offers.length}</div><div class="text-xs text-slate-500">Offres actives</div></div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Voir mon suivi de candidatures →</button>
+          <button onclick="go('cv')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📄 Modifier / Exporter mon CV PDF →</button>
+        </div>
+      </div>`;
+  }
+
+  else if (db.page === 'offers') {
+    const f = db.filters;
+    app.innerHTML = `
+      <div class="space-y-4 fade">
+        <div>
+          <h1 class="text-xl font-bold">Recherche d’offres</h1>
+          <p class="text-[11px] text-slate-500">Annonces [DÉMO] identifiées jusqu’à connexion à une source officielle.</p>
+        </div>
+        <div class="bg-white p-3.5 rounded-2xl border space-y-2.5">
+          <input value="${esc(f.q)}" oninput="db.filters.q=this.value;saveDB();renderOffersList()" placeholder="Rechercher un métier, mot-clé..." class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <div class="grid grid-cols-2 gap-2">
+            <input value="${esc(f.city)}" oninput="db.filters.city=this.value;saveDB();renderOffersList()" placeholder="Ville" class="px-2.5 py-2 rounded-xl border text-xs"/>
+            <select onchange="db.filters.contract=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+              <option value="">Tous contrats</option>
+              <option ${f.contract==='STAGE'?'selected':''} value="STAGE">Stage</option>
+              <option ${f.contract==='ALTERNANCE'?'selected':''} value="ALTERNANCE">Alternance</option>
+              <option ${f.contract==='PREMIER_EMPLOI'?'selected':''} value="PREMIER_EMPLOI">1er emploi</option>
+              <option ${f.contract==='IMMERSION'?'selected':''} value="IMMERSION">Immersion</option>
+            </select>
+            <select onchange="db.filters.sector=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+              <option value="">Tous secteurs</option>
+              <option ${f.sector==='Numérique & Tech'?'selected':''}>Numérique & Tech</option>
+              <option ${f.sector==='Marketing & Communication'?'selected':''}>Marketing & Communication</option>
+              <option ${f.sector==='Commerce & Relation Client'?'selected':''}>Commerce & Relation Client</option>
+            </select>
+            <select onchange="db.filters.level=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+              <option value="">Tous niveaux</option>
+              <option ${f.level==='Collège / Lycée'?'selected':''}>Collège / Lycée</option>
+              <option ${f.level==='BTS / Bac+2'?'selected':''}>BTS / Bac+2</option>
+              <option ${f.level==='Licence / Bac+3'?'selected':''}>Licence / Bac+3</option>
+              <option ${f.level==='Master / Bac+5'?'selected':''}>Master / Bac+5</option>
+            </select>
+          </div>
+        </div>
+        <div id="offersList" class="space-y-3"></div>
+      </div>`;
+    renderOffersList();
+  }
+
+  else if (db.page === 'offer_detail') {
+    const o = db.offers.find(x => x.id === db.selectedOfferId) || db.offers[0];
+    const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
+    app.innerHTML = `
+      <div class="bg-white rounded-2xl p-5 border space-y-4 fade">
+        <button onclick="go('offers')" class="text-xs font-semibold text-slate-500">← Retour aux offres</button>
+        <div class="flex gap-2 items-center">
+          <span class="px-2.5 py-0.5 rounded-full bg-navy-900 text-white text-xs font-bold">${esc(o.contract)}</span>
+          ${o.isDemo ? '<span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">DÉMO</span>' : ''}
+        </div>
+        <h1 class="text-xl font-extrabold">${esc(o.title)}</h1>
+        <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
+        <p class="text-sm text-slate-700 leading-relaxed border-t pt-3">${esc(o.desc)}</p>
+        <div class="space-y-2 border-t pt-3">
+          <div class="flex justify-between items-center">
+            <label class="text-xs font-bold">Message de candidature</label>
+            <button onclick="fillOfferCover('${o.id}')" class="text-xs font-semibold text-electric-500">✨ Rédiger avec l’IA</button>
+          </div>
+          <textarea id="coverMsg" rows="4" class="w-full p-3 rounded-xl border text-xs" placeholder="Votre motivation..."></textarea>
+          <button onclick="applyOffer('${o.id}', document.getElementById('coverMsg').value)" class="w-full py-3 rounded-xl ${hasApplied?'bg-emerald-600':'bg-electric-500'} text-white font-semibold text-sm">${hasApplied?'✓ Déjà candidaté':'Envoyer ma candidature'}</button>
+        </div>
+      </div>`;
+  }
+
+  else if (db.page === 'cv') {
+    const cvUser = u || db.users[0];
+    app.innerHTML = `
+      <div class="space-y-5 fade">
+        <div class="no-print bg-white p-5 rounded-2xl border space-y-3">
+          <div class="flex justify-between items-center">
+            <h1 class="text-lg font-bold">Créateur de CV IA</h1>
+            <button onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-electric-500 text-white text-xs font-semibold">Exporter PDF</button>
+          </div>
+          <input value="${esc(cvUser.fullName)}" oninput="cvUserEdit('fullName',this.value)" placeholder="Nom" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <input value="${esc(cvUser.educationLevel)}" oninput="cvUserEdit('educationLevel',this.value)" placeholder="Formation" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <div class="flex gap-2">
+            <input id="cvTarget" placeholder="Adapter pour l'offre (ex: stage vente)" class="flex-1 px-3 py-2 rounded-xl border text-xs"/>
+            <button onclick="adaptCV()" class="px-3 py-2 rounded-xl bg-navy-900 text-white text-xs font-semibold">✨ Adapter IA</button>
+          </div>
+          <textarea id="cvSummaryInput" rows="3" oninput="cvUserEdit('summary',this.value)" class="w-full p-2.5 rounded-xl border text-xs">${esc(cvUser.summary)}</textarea>
+          <input value="${esc(cvUser.skills)}" oninput="cvUserEdit('skills',this.value)" placeholder="Compétences (virgules)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+          <button onclick="addExp()" class="text-xs font-semibold text-electric-500">+ Ajouter une expérience</button>
+        </div>
+        <div id="cvPreviewBox" class="print-cv bg-white p-6 rounded-2xl border space-y-4"></div>
+      </div>`;
+    renderCVPreview();
+  }
+
+  else if (db.page === 'assistant') {
+    const modes = [['chat','Conseil'],['cover_letter','Lettre'],['interview','Entretien'],['fix_message','Corriger']];
+    app.innerHTML = `
+      <div class="bg-white rounded-2xl p-4 border space-y-3 fade">
+        <div class="flex justify-between items-center gap-2">
+          <h1 class="text-lg font-bold">Assistant IA</h1>
+          <select id="aiLvl" class="px-2.5 py-1.5 rounded-xl border text-xs bg-slate-50">
+            <option>Collège (3e)</option><option>Lycée</option><option>BTS / Bac+2</option><option>Licence / Master</option>
+          </select>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          ${modes.map(([id,lbl])=>`<button onclick="db.aiMode='${id}';saveDB();render()" class="px-3 py-1.5 rounded-xl text-xs font-semibold ${db.aiMode===id?'bg-navy-900 text-white':'bg-slate-100'}">${lbl}</button>`).join('')}
+        </div>
+        <div class="h-72 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
+          ${db.aiMessages.map(m=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'bg-white border'}">${esc(m.text)}</div></div>`).join('')}
+        </div>
+        <form onsubmit="sendAI(event)" class="flex gap-2">
+          <input id="aiInput" required placeholder="Votre question ou brouillon..." class="flex-1 px-3 py-2.5 rounded-xl border text-xs"/>
+          <button class="px-4 py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Envoyer</button>
+        </form>
+      </div>`;
+  }
+
+  else if (db.page === 'applications') {
+    if (!u) return go('auth');
+    const apps = db.applications.filter(a => a.userId === u.id);
+    const statuses = ['ENVOYEE','EN_ATTENTE','ENTRETIEN','REPONSE_RECUE','REFUSEE'];
+    app.innerHTML = `
+      <div class="space-y-4 fade">
+        <h1 class="text-xl font-bold">Suivi des candidatures (${apps.length})</h1>
+        ${apps.map(a => {
+          const o = db.offers.find(x => x.id === a.offerId) || { title: 'Offre', companyName: '' };
+          return `
+          <div class="bg-white p-4 rounded-2xl border space-y-2">
+            <div class="flex justify-between items-start gap-2">
+              <div><div class="font-bold text-sm">${esc(o.title)}</div><div class="text-xs text-slate-500">${esc(o.companyName)}</div></div>
+              <select onchange="changeAppStatus('${a.id}',this.value)" class="px-2.5 py-1.5 rounded-lg border text-xs font-semibold bg-slate-50">
+                ${statuses.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}
+              </select>
+            </div>
+            ${a.reply ? `<div class="p-2.5 rounded-xl bg-blue-50 text-xs"><strong>Réponse :</strong> ${esc(a.reply)}</div>` : ''}
+          </div>`;
+        }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune candidature envoyée. Explorez les offres !</div>'}
+      </div>`;
+  }
+
+  else if (db.page === 'profile') {
+    if (!u) return go('auth');
+    const age = calcAge(u.birthDate);
+    app.innerHTML = `
+      <div class="bg-white rounded-2xl p-5 border space-y-4 fade">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-lg font-bold">${esc(u.fullName)}</h1>
+            <p class="text-xs text-slate-500">${age!==null ? age+' ans (date de naissance masquée)' : 'Profil Pro'} • Plan ${esc(u.plan)}</p>
+          </div>
+          <button onclick="db.currentUserId=null;saveDB();go('auth')" class="px-3 py-1.5 rounded-xl border text-xs font-semibold">Déconnexion</button>
+        </div>
+        ${isMinor(u) ? `<div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">🛡️ <strong>Protection mineur active :</strong> votre email est caché aux entreprises (contact via ${esc(u.guardianEmail || 'référent légal')}).</div>` : ''}
+        <div class="space-y-2 text-xs">
+          <label class="font-semibold">Ville</label>
+          <input value="${esc(u.city)}" onchange="cvUserEdit('city',this.value)" class="w-full px-3 py-2 rounded-xl border"/>
+          <label class="font-semibold block pt-1">Formation</label>
+          <input value="${esc(u.educationLevel||'')}" onchange="cvUserEdit('educationLevel',this.value)" class="w-full px-3 py-2 rounded-xl border"/>
+        </div>
+        <div class="pt-3 border-t flex justify-between items-center">
+          <button onclick="deleteMyAccount()" class="px-3.5 py-2 rounded-xl bg-red-600 text-white text-xs font-semibold">Supprimer compte (RGPD)</button>
+          <button onclick="localStorage.removeItem(DB_KEY);location.reload()" class="text-xs text-slate-400 underline">Réinitialiser démo</button>
+        </div>
+      </div>`;
+  }
+
+  else if (db.page === 'company') {
+    if (!u || u.role !== 'COMPANY') {
+      app.innerHTML = `<div class="bg-white p-6 rounded-2xl border text-center space-y-3 fade"><h1 class="font-bold">Espace Entreprise</h1><p class="text-xs text-slate-600">Connectez-vous avec le compte Pro démo pour publier et gérer les candidatures.</p><button onclick="loginDemo('u_pro')" class="px-4 py-2.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">Accéder en mode Pro (NovaTech)</button></div>`;
+    } else {
+      const myOffers = db.offers.filter(o => o.companyId === u.id);
+      const myApps = db.applications.filter(a => myOffers.some(o => o.id === a.offerId));
+      app.innerHTML = `
+        <div class="space-y-4 fade">
+          <div class="bg-white p-4 rounded-2xl border flex justify-between items-center">
+            <div><h1 class="font-bold">${esc(u.company.name)}</h1><p class="text-xs text-slate-500">${u.company.verified ? '✅ Entreprise vérifiée' : '⏳ Validation requise'}</p></div>
+            ${!u.company.verified ? `<button onclick="verifyCompany()" class="px-3 py-1.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">Valider (Démo)</button>` : ''}
+          </div>
+          <form onsubmit="publishOffer(event)" class="bg-white p-4 rounded-2xl border space-y-2.5">
+            <h2 class="font-bold text-sm">Publier une offre</h2>
+            <input id="poTitle" required placeholder="Intitulé du poste" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="poCity" required placeholder="Ville" class="px-3 py-2 rounded-xl border text-xs"/>
+              <select id="poContract" class="px-3 py-2 rounded-xl border text-xs bg-white"><option value="STAGE">Stage</option><option value="ALTERNANCE">Alternance</option><option value="IMMERSION">Immersion</option></select>
+            </div>
+            <textarea id="poDesc" required rows="2" placeholder="Description..." class="w-full p-2.5 rounded-xl border text-xs"></textarea>
+            <button ${!u.company.verified?'disabled':''} class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold disabled:opacity-40">Publier l’annonce</button>
+          </form>
+          <div class="bg-white p-4 rounded-2xl border space-y-2">
+            <h2 class="font-bold text-sm">Candidatures reçues (${myApps.length})</h2>
+            ${myApps.map(a => {
+              const cand = db.users.find(x => x.id === a.userId);
+              const minor = isMinor(cand);
+              return `<div class="p-3 rounded-xl border text-xs space-y-1">
+                <div class="font-bold">${esc(cand?.fullName)} (${esc(cand?.educationLevel)})</div>
+                <div class="bg-slate-50 p-2 rounded"><strong>Contact :</strong> ${minor ? '🛡️ Mineur – via référent : '+esc(cand?.guardianEmail) : esc(cand?.email)}</div>
+                <div class="flex gap-2 pt-1">
+                  <button onclick="replyApp('${a.id}','ENTRETIEN')" class="px-2.5 py-1 rounded bg-emerald-600 text-white">Proposer entretien</button>
+                  <button onclick="replyApp('${a.id}','REFUSEE')" class="px-2.5 py-1 rounded bg-slate-200">Refuser</button>
+                </div>
+              </div>`;
+            }).join('') || '<p class="text-xs text-slate-500">Aucune candidature reçue.</p>'}
+          </div>
+        </div>`;
+    }
+  }
+
+  else if (db.page === 'premium') {
+    const isPrem = u?.plan === 'PREMIUM';
+    app.innerHTML = `
+      <div class="space-y-4 fade">
+        <div class="text-center"><h1 class="text-xl font-extrabold">Gratuit vs Premium</h1><p class="text-xs text-slate-500">Aucun paiement réel activé dans ce prototype.</p></div>
+        <div class="bg-white p-5 rounded-2xl border space-y-2">
+          <div class="font-bold">Gratuit – 0 €/mois</div>
+          <p class="text-xs text-slate-600">Recherche d’offres • CV simple PDF • Suivi des candidatures • Conseils de base.</p>
+        </div>
+        <div class="bg-navy-900 text-white p-5 rounded-2xl border-2 border-electric-500 space-y-3">
+          <div class="font-bold text-lg">StagePilot Premium – 4,99 €/mois (Aperçu gratuit)</div>
+          <p class="text-xs text-slate-300">IA avancée • Personnalisation CV • Lettres sur-mesure • Préparation entretiens.</p>
+          <button onclick="togglePlan()" class="w-full py-2.5 rounded-xl bg-electric-500 text-xs font-bold">${isPrem ? '✓ Aperçu Premium actif (Revenir au gratuit)' : 'Tester Premium gratuitement (0 €)'}</button>
+        </div>
+      </div>`;
+  }
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function loginDemo(id) { db.currentUserId = id; saveDB(); toast('Connecté !'); go(id === 'u_pro' ? 'company' : 'dashboard'); }
+function registerUser(e) {
+  e.preventDefault();
+  const role = document.getElementById('regRole').value;
+  const dob = document.getElementById('regDob')?.value || '';
+  const guardian = document.getElementById('regGuardian')?.value || '';
+  if (role === 'CANDIDATE' && dob && calcAge(dob) < 18 && !guardian.includes('@')) {
+    return toast('Protection mineur : email du parent/référent requis.');
+  }
+  const id = 'u_' + Date.now();
+  db.users.push({
+    id, role,
+    email: document.getElementById('regEmail').value,
+    fullName: document.getElementById('regName').value,
+    city: document.getElementById('regCity').value,
+    birthDate: dob, guardianEmail: guardian,
+    educationLevel: document.getElementById('regLevel')?.value || 'Lycée',
+    plan: 'FREE', summary: 'Motivé(e) pour apprendre en entreprise.', skills: 'Sérieux, Travail en équipe', experiences: [],
+    ...(role === 'COMPANY' ? { company: { name: document.getElementById('regCompName').value || document.getElementById('regName').value, sector: 'Tech', city: document.getElementById('regCity').value, verified: false } } : {})
+  });
+  db.currentUserId = id; saveDB(); toast('Compte créé !'); go(role === 'COMPANY' ? 'company' : 'dashboard');
+}
+function toggleSave(offerId) {
+  const u = currentUser(); if (!u) return go('auth');
+  const idx = db.saved.findIndex(s => s.userId === u.id && s.offerId === offerId);
+  if (idx >= 0) db.saved.splice(idx, 1); else db.saved.push({ userId: u.id, offerId });
+  saveDB(); renderOffersList();
+}
+function applyOffer(offerId, cover = 'Candidature envoyée via StagePilot.') {
+  const u = currentUser(); if (!u) return go('auth');
+  if (isMinor(u) && !u.guardianEmail) return toast('Renseignez un email référent légal dans Profil.');
+  if (db.applications.some(a => a.userId === u.id && a.offerId === offerId)) return toast('Déjà candidaté !');
+  db.applications.push({ id: 'a_' + Date.now(), userId: u.id, offerId, status: 'ENVOYEE', cover, reply: '' });
+  saveDB(); toast('✅ Candidature envoyée !');
+  if (db.page === 'offers') renderOffersList(); else render();
+}
+function fillOfferCover(offerId) {
+  const o = db.offers.find(x => x.id === offerId);
+  const el = document.getElementById('coverMsg');
+  if (o && el) el.value = runLocalAI('cover_letter', o.title, currentUser()?.educationLevel, currentUser());
+}
+function changeAppStatus(id, status) {
+  const a = db.applications.find(x => x.id === id); if (a) { a.status = status; saveDB(); toast('Statut mis à jour'); }
+}
+function cvUserEdit(field, val) {
+  const target = currentUser() || db.users[0]; target[field] = val; saveDB();
+  if (db.page === 'cv') renderCVPreview();
+}
+function adaptCV() {
+  const target = currentUser() || db.users[0];
+  const off = document.getElementById('cvTarget').value || 'Stage';
+  target.summary = `Candidat(e) en ${target.educationLevel}, motivé(e) pour « ${off} ». Atouts ciblés : ${target.skills}.`;
+  saveDB();
+  const s = document.getElementById('cvSummaryInput'); if (s) s.value = target.summary;
+  renderCVPreview(); toast('✨ CV adapté par l’IA !');
+}
+function addExp() {
+  const target = currentUser() || db.users[0];
+  const title = prompt('Intitulé (ex: Stage découverte) :'); if (!title) return;
+  const org = prompt('Entreprise / École :') || 'Entreprise';
+  target.experiences = target.experiences || [];
+  target.experiences.push({ title, org, period: '2026', desc: 'Missions réalisées avec l’équipe.' });
+  saveDB(); renderCVPreview();
+}
+function sendAI(e) {
+  e.preventDefault();
+  const q = document.getElementById('aiInput').value.trim(); if (!q) return;
+  const lvl = document.getElementById('aiLvl').value;
+  db.aiMessages.push({ role: 'user', text: q });
+  db.aiMessages.push({ role: 'ai', text: runLocalAI(db.aiMode, q, lvl, currentUser()) });
+  saveDB(); render();
+}
+function verifyCompany() { const u = currentUser(); if (u?.company) { u.company.verified = true; saveDB(); render(); } }
+function publishOffer(e) {
+  e.preventDefault(); const u = currentUser();
+  db.offers.unshift({
+    id: 'o_' + Date.now(), companyId: u.id, companyName: u.company.name,
+    title: document.getElementById('poTitle').value, city: document.getElementById('poCity').value,
+    sector: 'Numérique & Tech', level: 'Collège / Lycée',
+    contract: document.getElementById('poContract').value, duration: '2 mois',
+    isDemo: false, desc: document.getElementById('poDesc').value
+  });
+  saveDB(); toast('✅ Offre publiée !'); render();
+}
+function replyApp(id, status) {
+  const a = db.applications.find(x => x.id === id); if (!a) return;
+  a.status = status; a.reply = prompt('Message au candidat :') || (status === 'ENTRETIEN' ? 'Nous aimerions vous rencontrer.' : 'Merci pour votre candidature.');
+  saveDB(); render();
+}
+function togglePlan() {
+  const u = currentUser(); if (!u) return go('auth');
+  u.plan = u.plan === 'PREMIUM' ? 'FREE' : 'PREMIUM'; saveDB(); render();
+}
+function deleteMyAccount() {
+  const u = currentUser(); if (!u || !confirm('Supprimer votre compte (RGPD) ?')) return;
+  db.users = db.users.filter(x => x.id !== u.id);
+  db.applications = db.applications.filter(a => a.userId !== u.id);
+  db.currentUserId = null; saveDB(); go('home'); toast('Données supprimées.');
+}
+
+render();
+</script>
+</body>
+</html>
