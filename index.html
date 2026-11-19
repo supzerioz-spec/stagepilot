@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="theme-color" content="#0A1628" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>StagePilot V2 – Stages & Alternances IA</title>
+  <title>StagePilot V3 – Stages & Alternances IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script>
@@ -88,11 +88,13 @@ const defaultDB = {
   selectedOfferId: null,
   currentUserId: null,
   filters: { q: '', city: '', sector: '', level: '', contract: '' },
-  aiTab: 'coach', // coach | interview | quiz
+  aiTab: 'coach', // coach | interview | quiz | spontaneous
   aiMode: 'chat',
-  cvTheme: 'startup', // startup | clean
+  cvTheme: 'startup', // startup | electric | clean
+  appTab: 'apps', // apps | saved
+  spontResult: null,
   aiMessages: [
-    { role: 'ai', text: 'Bonjour ! Je suis ton assistant StagePilot V2. Utilise le Coach IA, lance le Simulateur d’entretien ou fais le Quiz d’orientation !' }
+    { role: 'ai', text: 'Bienvenue sur StagePilot V3 ! Teste le Match IA sur les offres, le Kit Candidature Spontanée, le Simulateur d’entretien ou le CV Bleu Électrique.' }
   ],
   sim: { step: 0, sector: 'Numérique & Tech', level: 'Lycée', history: [] },
   quiz: { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null },
@@ -100,10 +102,12 @@ const defaultDB = {
     {
       id: 'u_lucas', role: 'CANDIDATE', email: 'lucas.demo@stagepilot.fr',
       fullName: 'Lucas Martin', birthDate: '2009-04-12', guardianEmail: 'parent.martin@exemple.fr',
-      city: 'Lyon', educationLevel: 'Lycée (Seconde / Première)', contractType: 'STAGE',
+      city: 'Lyon', educationLevel: 'Collège / Lycée', contractType: 'STAGE',
       availability: 'Vacances / Juin 2026', plan: 'FREE',
       summary: 'Lycéen sérieux et curieux à la recherche d’un stage de découverte en entreprise.',
       skills: 'HTML/CSS, Travail en équipe, Communication, Pack Office',
+      languages: 'Français (natif), Anglais (B1)',
+      interests: 'Basket en club (4 ans), Montage vidéo, Projets informatiques',
       experiences: [{ title: 'Stage observation 3e', org: 'Atelier Web Lyon', period: '2025', desc: 'Découverte des métiers du numérique.' }]
     },
     {
@@ -136,7 +140,8 @@ function loadDB() {
       sim: parsed.sim || JSON.parse(JSON.stringify(defaultDB.sim)),
       quiz: parsed.quiz || JSON.parse(JSON.stringify(defaultDB.quiz)),
       aiTab: parsed.aiTab || 'coach',
-      cvTheme: parsed.cvTheme || 'startup'
+      cvTheme: parsed.cvTheme || 'startup',
+      appTab: parsed.appTab || 'apps'
     };
   } catch { return JSON.parse(JSON.stringify(defaultDB)); }
 }
@@ -160,10 +165,7 @@ function go(page, offerId = null) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function openAssistantTab(tab) {
-  db.aiTab = tab;
-  go('assistant');
-}
+function openAssistantTab(tab) { db.aiTab = tab; go('assistant'); }
 
 function toast(msg) {
   const el = document.createElement('div');
@@ -171,6 +173,46 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
+}
+
+function copyText(txt) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(() => toast('📋 Copié dans le presse-papiers !')).catch(() => toast('Sélectionnez le texte pour copier.'));
+  } else {
+    toast('Appuyez longuement sur le texte pour copier.');
+  }
+}
+
+// V3 : Calcul du Match IA % entre le candidat et une offre
+function computeMatch(offer, user) {
+  if (!user || user.role !== 'CANDIDATE') return { score: 80, reasons: ['Offre adaptée aux 15–25 ans'] };
+  let score = 58;
+  const reasons = [];
+  if (user.city && offer.city.toLowerCase().includes(user.city.toLowerCase())) {
+    score += 18; reasons.push('Même ville');
+  }
+  if (user.contractType && offer.contract === user.contractType) {
+    score += 12; reasons.push('Contrat visé');
+  }
+  if (user.educationLevel && (offer.level.toLowerCase().includes(user.educationLevel.toLowerCase().split(' ')[0]) || offer.level.includes('Lycée') && user.educationLevel.includes('Lycée'))) {
+    score += 10; reasons.push('Niveau adapté');
+  }
+  if (user.skills && user.skills.split(',').some(s => offer.desc.toLowerCase().includes(s.trim().toLowerCase()) || offer.title.toLowerCase().includes(s.trim().toLowerCase()))) {
+    score += 5; reasons.push('Compétences proches');
+  }
+  return { score: Math.min(98, score), reasons: reasons.length ? reasons : ['Profil compatible'] };
+}
+
+// V3 : Score de complétude du CV
+function computeCVScore(cvUser) {
+  let pts = 20;
+  if (cvUser.fullName && cvUser.fullName.length > 3) pts += 15;
+  if (cvUser.summary && cvUser.summary.length > 25) pts += 20;
+  if (cvUser.skills && cvUser.skills.split(',').filter(Boolean).length >= 3) pts += 15;
+  if (cvUser.experiences && cvUser.experiences.length > 0) pts += 15;
+  if (cvUser.languages) pts += 8;
+  if (cvUser.interests) pts += 7;
+  return Math.min(100, pts);
 }
 
 function runLocalAI(mode, prompt, level, user) {
@@ -189,7 +231,26 @@ function runLocalAI(mode, prompt, level, user) {
   return `💡 Conseil StagePilot (${lvl}) :\nPour « ${prompt} » :\n• Personnalisez les 2 premières phrases de votre message.\n• Mettez en avant vos atouts (${skills}).\n• Relancez poliment après 5 jours ouvrés.`;
 }
 
-// Simulateur d'entretien V2
+// V3 : Générateur Candidature Spontanée (Email + Message court + Script appel)
+function generateSpontaneous(e) {
+  e.preventDefault();
+  const company = document.getElementById('spComp').value.trim() || 'votre entreprise';
+  const role = document.getElementById('spRole').value.trim() || 'un stage';
+  const u = currentUser() || db.users[0];
+  const lvl = u.educationLevel || 'Lycée';
+  const name = u.fullName || 'Prénom Nom';
+  const skills = u.skills || 'sérieux et envie d’apprendre';
+
+  db.spontResult = {
+    email: `Objet : Demande de ${role} – ${name} (${lvl})\n\nBonjour,\n\nActuellement en ${lvl}, j’admire particulièrement le travail de ${company}. Je suis à la recherche de ${role} et j’aimerais beaucoup découvrir vos métiers aux côtés de votre équipe.\n\nMotivé(e), ponctuel(le) et avec des bases en ${skills}, je suis disponible dès ${u.availability || 'prochainement'}.\n\nSeriez-vous disponible pour un rapide échange de 10 minutes ?\n\nBien cordialement,\n${name}`,
+    dm: `Bonjour ! Je suis étudiant(e) en ${lvl} et je suis de près les projets de ${company}. Je cherche actuellement ${role} et j’aimerais savoir si vous accueillez des jeunes motivés dans votre équipe. Merci beaucoup !`,
+    call: `« Bonjour, je m’appelle ${name}, je suis en ${lvl}. Je vous appelle car votre entreprise ${company} m’intéresse beaucoup et je recherche ${role}. Auriez-vous une adresse email à qui envoyer mon CV ou une personne à contacter ? Merci beaucoup pour votre aide ! »`
+  };
+  saveDB();
+  render();
+}
+
+// Simulateur d'entretien
 const SIM_QUESTIONS = [
   '1/4 — Présentez-vous en quelques phrases : quelle est votre formation et qu’est-ce qui vous motive ?',
   '2/4 — Pourquoi avez-vous envie de rejoindre une entreprise dans ce secteur ?',
@@ -202,32 +263,24 @@ function evaluateSimAnswer(step, answer, level) {
   const words = txt.split(/\s+/).filter(Boolean).length;
   let score = 55;
   const tips = [];
-
-  if (words >= 12) score += 15; else tips.push('Développez un peu plus votre réponse (visez 2 à 4 phrases).');
+  if (words >= 12) score += 15; else tips.push('Développez un peu plus votre réponse (2 à 4 phrases).');
   if (words >= 25) score += 10;
-
   if (step === 0 && /(école|lycée|collège|bts|licence|master|étud|stage|motiv|passion|apprendre)/.test(txt)) score += 15;
-  else if (step === 0) tips.push(`Mentionnez clairement votre niveau actuel (${level}) et ce que vous voulez apprendre.`);
-
+  else if (step === 0) tips.push(`Mentionnez votre niveau (${level}) et ce que vous voulez apprendre.`);
   if (step === 1 && /(entreprise|équipe|projet|secteur|métier|découvrir|progresser)/.test(txt)) score += 15;
-  else if (step === 1) tips.push('Reliez votre envie à ce que fait concrètement l’entreprise.');
-
+  else if (step === 1) tips.push('Reliez votre motivation au métier concret.');
   if (step === 2 && /(équipe|groupe|aidé|créé|organisé|réussi|problème|solution|sport)/.test(txt)) score += 15;
-  else if (step === 2) tips.push('Donnez un exemple précis : quel était votre rôle et quel a été le résultat ?');
-
+  else if (step === 2) tips.push('Donnez un exemple concret avec le résultat obtenu.');
   if (step === 3 && (txt.includes('?') || /(semaine|journée|outil|équipe|tuteur|mission)/.test(txt))) score += 18;
-  else if (step === 3) tips.push('Posez toujours une vraie question ouverte (ex : « À quoi ressemble une journée type ? »).');
-
+  else if (step === 3) tips.push('Posez une vraie question ouverte au recruteur.');
   score = Math.min(98, score);
   const badge = score >= 80 ? '🌟 Excellente réponse !' : score >= 68 ? '👍 Bonne base !' : '💡 À renforcer';
-  const feedback = tips.length ? `${badge} Conseil : ${tips.join(' ')}` : `${badge} Réponse claire, structurée et adaptée à un recruteur.`;
-  return { score, feedback };
+  return { score, feedback: tips.length ? `${badge} Conseil : ${tips.join(' ')}` : `${badge} Réponse structurée et convaincante.` };
 }
 
 function submitSimAnswer(e) {
   e.preventDefault();
-  const inp = document.getElementById('simAnswer');
-  const answer = inp.value.trim();
+  const answer = document.getElementById('simAnswer').value.trim();
   if (!answer) return;
   const step = db.sim.step;
   const ev = evaluateSimAnswer(step, answer, db.sim.level);
@@ -236,95 +289,46 @@ function submitSimAnswer(e) {
   saveDB();
   render();
 }
+function resetSim() { db.sim.step = 0; db.sim.history = []; saveDB(); render(); }
 
-function resetSim() {
-  db.sim.step = 0;
-  db.sim.history = [];
-  saveDB();
-  render();
-}
-
-// Quiz Orientation V2
+// Quiz Orientation
 const QUIZ_QUESTIONS = [
-  {
-    q: '1/4 — Quand tu as du temps libre, qu’est-ce que tu préfères faire ?',
-    opts: [
-      ['tech', 'Bidouiller sur ordi/téléphone, comprendre comment marchent les applis'],
-      ['design', 'Dessiner, faire du montage vidéo ou soigner l’esthétique'],
-      ['comm', 'Créer des posts, écrire, animer des réseaux sociaux'],
-      ['commerce', 'Discuter, conseiller les gens, organiser ou vendre']
-    ]
-  },
-  {
-    q: '2/4 — Quel environnement te donne le plus envie ?',
-    opts: [
-      ['tech', 'Un bureau ou startup tech avec des projets numériques'],
-      ['design', 'Un studio créatif où l’on imagine de nouveaux visuels'],
-      ['comm', 'Une agence média, culturelle ou événementielle'],
-      ['commerce', 'Un lieu vivant au contact direct des clients']
-    ]
-  },
-  {
-    q: '3/4 — Ton plus grand point fort selon tes amis ?',
-    opts: [
-      ['tech', 'Logique, curieux(se) et débrouillard(e)'],
-      ['design', 'Créatif(ve) et attentif(ve) aux détails'],
-      ['comm', 'À l’aise à l’écrit et plein(e) d’idées'],
-      ['commerce', 'Sociable, à l’écoute et convaincant(e)']
-    ]
-  },
-  {
-    q: '4/4 — Ce que tu veux surtout apprendre pendant ton stage :',
-    opts: [
-      ['tech', 'Coder, automatiser ou gérer des outils numériques'],
-      ['design', 'Utiliser des logiciels de design et créer des maquettes'],
-      ['comm', 'Préparer des campagnes et gérer une image de marque'],
-      ['commerce', 'Apprendre la relation client et le travail sur le terrain']
-    ]
-  }
+  { q: '1/4 — Quand tu as du temps libre, qu’est-ce que tu préfères faire ?', opts: [['tech', 'Bidouiller sur ordi/téléphone, comprendre les applis'], ['design', 'Dessiner, montage vidéo ou soigner l’esthétique'], ['comm', 'Créer des posts, écrire, animer des réseaux'], ['commerce', 'Discuter, conseiller les gens, organiser ou vendre']] },
+  { q: '2/4 — Quel environnement te donne le plus envie ?', opts: [['tech', 'Un bureau ou startup tech avec des projets numériques'], ['design', 'Un studio créatif où l’on imagine des visuels'], ['comm', 'Une agence média, culturelle ou événementielle'], ['commerce', 'Un lieu vivant au contact direct des clients']] },
+  { q: '3/4 — Ton plus grand point fort selon tes amis ?', opts: [['tech', 'Logique, curieux(se) et débrouillard(e)'], ['design', 'Créatif(ve) et attentif(ve) aux détails'], ['comm', 'À l’aise à l’écrit et plein(e) d’idées'], ['commerce', 'Sociable, à l’écoute et convaincant(e)']] },
+  { q: '4/4 — Ce que tu veux surtout apprendre pendant ton stage :', opts: [['tech', 'Coder, automatiser ou gérer des outils numériques'], ['design', 'Utiliser des outils de design et créer des maquettes'], ['comm', 'Préparer des campagnes et gérer une image'], ['commerce', 'Apprendre la relation client sur le terrain']] }
 ];
-
 const QUIZ_META = {
   tech: { sector: 'Numérique & Tech', jobs: 'Assistant Développeur Web, Support IT, Découverte Data & IA', desc: 'Tu aimes comprendre, résoudre et construire des outils concrets.' },
   design: { sector: 'Design & Création', jobs: 'Stage UX/UI Design, Graphisme, Montage & Création Visuelle', desc: 'Tu as l’œil pour les belles interfaces et les idées visuelles.' },
   comm: { sector: 'Marketing & Communication', jobs: 'Chargé(e) de Communication, Réseaux Sociaux, Création de Contenu', desc: 'Tu sais faire passer des messages et capter l’attention.' },
   commerce: { sector: 'Commerce & Relation Client', jobs: 'Immersion Relation Client, Conseiller(ère) Vente, Gestion de Projet', desc: 'Tu es à l’aise avec l’humain et le contact concret.' }
 };
-
 function pickQuizOption(cat) {
   db.quiz.scores[cat] = (db.quiz.scores[cat] || 0) + 1;
   db.quiz.step += 1;
-  if (db.quiz.step >= QUIZ_QUESTIONS.length) {
-    const best = Object.entries(db.quiz.scores).sort((a, b) => b[1] - a[1])[0][0];
-    db.quiz.result = best;
-  }
-  saveDB();
-  render();
+  if (db.quiz.step >= QUIZ_QUESTIONS.length) db.quiz.result = Object.entries(db.quiz.scores).sort((a, b) => b[1] - a[1])[0][0];
+  saveDB(); render();
 }
-
-function resetQuiz() {
-  db.quiz = { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null };
-  saveDB();
-  render();
-}
-
-function launchRecommendedOffers(sector) {
-  db.filters = { q: '', city: '', sector, level: '', contract: '' };
-  go('offers');
-}
+function resetQuiz() { db.quiz = { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null }; saveDB(); render(); }
+function launchRecommendedOffers(sector) { db.filters = { q: '', city: '', sector, level: '', contract: '' }; go('offers'); }
 
 function renderOffersList() {
   const box = document.getElementById('offersList');
   if (!box) return;
   const u = currentUser();
   const f = db.filters;
-  const list = db.offers.filter(o =>
-    (!f.q || (o.title + o.desc + o.companyName).toLowerCase().includes(f.q.toLowerCase())) &&
-    (!f.city || o.city.toLowerCase().includes(f.city.toLowerCase())) &&
-    (!f.sector || o.sector === f.sector) &&
-    (!f.level || o.level === f.level) &&
-    (!f.contract || o.contract === f.contract)
-  );
+  const list = db.offers
+    .filter(o =>
+      (!f.q || (o.title + o.desc + o.companyName).toLowerCase().includes(f.q.toLowerCase())) &&
+      (!f.city || o.city.toLowerCase().includes(f.city.toLowerCase())) &&
+      (!f.sector || o.sector === f.sector) &&
+      (!f.level || o.level === f.level) &&
+      (!f.contract || o.contract === f.contract)
+    )
+    .map(o => ({ ...o, match: computeMatch(o, u) }))
+    .sort((a, b) => b.match.score - a.match.score);
+
   box.innerHTML = list.map(o => {
     const isSaved = u && db.saved.some(s => s.userId === u.id && s.offerId === o.id);
     const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
@@ -333,13 +337,13 @@ function renderOffersList() {
       <div class="flex justify-between items-start gap-2">
         <div class="flex flex-wrap gap-1.5 items-center">
           <span class="px-2 py-0.5 rounded-full bg-navy-900 text-white text-[10px] font-bold">${esc(o.contract)}</span>
+          <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold">⚡ ${o.match.score}% Match</span>
           ${o.isDemo ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">DÉMO</span>' : ''}
-          <span class="text-[11px] text-slate-500">${esc(o.level)}</span>
         </div>
         <button onclick="toggleSave('${o.id}')" class="px-2.5 py-1 rounded-lg border text-xs ${isSaved?'bg-blue-50 border-electric-500 text-electric-500 font-bold':'text-slate-400'}">${isSaved?'★ Sauvée':'☆ Sauver'}</button>
       </div>
       <div onclick="go('offer_detail','${o.id}')" class="font-bold text-base cursor-pointer">${esc(o.title)}</div>
-      <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.duration)}</div>
+      <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
       <p class="text-xs text-slate-600">${esc(o.desc)}</p>
       <div class="flex gap-2 pt-1">
         <button onclick="go('offer_detail','${o.id}')" class="flex-1 py-2 rounded-xl border text-xs font-semibold">Voir fiche</button>
@@ -351,8 +355,13 @@ function renderOffersList() {
 
 function renderCVPreview() {
   const box = document.getElementById('cvPreviewBox');
-  if (!box) return;
+  const bar = document.getElementById('cvCompleteness');
   const cvUser = currentUser() || db.users[0];
+  if (bar) {
+    const sc = computeCVScore(cvUser);
+    bar.innerHTML = `<div class="flex justify-between text-[11px] font-bold mb-1"><span>Force du CV</span><span class="text-electric-500">${sc}%</span></div><div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-electric-500 transition-all" style="width:${sc}%"></div></div>`;
+  }
+  if (!box) return;
   const initials = (cvUser.fullName || 'SP').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const expHtml = (cvUser.experiences || []).map((e, idx) => `
     <div class="mt-2 flex justify-between gap-2">
@@ -363,25 +372,32 @@ function renderCVPreview() {
       <button onclick="removeExp(${idx})" class="no-print text-[10px] text-red-500 shrink-0">✕</button>
     </div>`).join('');
 
-  if (db.cvTheme === 'startup') {
+  const extraSections = `
+    ${cvUser.languages ? `<div><div class="text-[11px] font-bold uppercase text-electric-500">Langues</div><p class="text-xs mt-0.5 text-slate-700">${esc(cvUser.languages)}</p></div>` : ''}
+    ${cvUser.interests ? `<div><div class="text-[11px] font-bold uppercase text-electric-500">Atouts & Centres d’intérêt</div><p class="text-xs mt-0.5 text-slate-700">${esc(cvUser.interests)}</p></div>` : ''}`;
+
+  if (db.cvTheme === 'startup' || db.cvTheme === 'electric') {
+    const headerCls = db.cvTheme === 'electric' ? 'bg-electric-500 text-white' : 'bg-navy-900 text-white';
+    const badgeCls = db.cvTheme === 'electric' ? 'bg-navy-900 text-white' : 'bg-electric-500 text-white';
     box.innerHTML = `
       <div class="overflow-hidden rounded-xl border border-slate-200">
-        <div class="bg-navy-900 text-white p-5 flex items-center gap-3.5">
-          <div class="w-12 h-12 rounded-xl bg-electric-500 flex items-center justify-center font-extrabold text-lg shrink-0">${esc(initials)}</div>
+        <div class="${headerCls} p-5 flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl ${badgeCls} flex items-center justify-center font-extrabold text-lg shrink-0">${esc(initials)}</div>
           <div>
             <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
-            <p class="text-xs text-electric-400 font-semibold">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
+            <p class="text-xs opacity-90 font-semibold">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
           </div>
         </div>
-        <div class="p-5 space-y-4 bg-white">
-          <div><div class="text-[11px] font-bold uppercase text-electric-500">À propos</div><p class="text-xs mt-1 text-slate-700 leading-relaxed">${esc(cvUser.summary)}</p></div>
-          <div><div class="text-[11px] font-bold uppercase text-electric-500">Compétences clés</div><div class="flex flex-wrap gap-1.5 mt-1.5">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2.5 py-0.5 rounded-full bg-blue-50 text-navy-900 text-[11px] font-semibold">${esc(s.trim())}</span>`).join('')}</div></div>
+        <div class="p-5 space-y-3.5 bg-white">
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">Profil</div><p class="text-xs mt-1 text-slate-700 leading-relaxed">${esc(cvUser.summary)}</p></div>
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">Compétences</div><div class="flex flex-wrap gap-1.5 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2.5 py-0.5 rounded-full bg-blue-50 text-navy-900 text-[11px] font-semibold">${esc(s.trim())}</span>`).join('')}</div></div>
           <div><div class="text-[11px] font-bold uppercase text-electric-500">Expériences & Projets</div>${expHtml || '<p class="text-xs text-slate-400 mt-1">Ajoutez une expérience ou un projet scolaire.</p>'}</div>
+          ${extraSections}
         </div>
       </div>`;
   } else {
     box.innerHTML = `
-      <div class="space-y-4">
+      <div class="space-y-3.5">
         <div class="border-b-2 border-navy-900 pb-3">
           <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
           <p class="text-xs font-semibold text-electric-500">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
@@ -389,6 +405,7 @@ function renderCVPreview() {
         <div><div class="text-[11px] font-bold uppercase text-slate-500">Profil</div><p class="text-xs mt-1">${esc(cvUser.summary)}</p></div>
         <div><div class="text-[11px] font-bold uppercase text-slate-500">Compétences</div><div class="flex flex-wrap gap-1 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2 py-0.5 rounded bg-slate-100 text-xs">${esc(s.trim())}</span>`).join('')}</div></div>
         <div><div class="text-[11px] font-bold uppercase text-slate-500">Expériences</div>${expHtml}</div>
+        ${extraSections}
       </div>`;
   }
 }
@@ -407,10 +424,10 @@ function render() {
       <div class="space-y-4 fade">
         <div class="bg-navy-900 text-white rounded-2xl p-6 space-y-4">
           <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-800 text-electric-400 text-[11px] font-semibold">
-            ✨ StagePilot V2 • 15–25 ans • 0 €
+            ✨ StagePilot V3 • 15–25 ans • 0 €
           </span>
           <h1 class="text-2xl font-extrabold leading-tight">Ton stage ou ton alternance, <span class="text-electric-400">piloté par l’IA.</span></h1>
-          <p class="text-xs text-slate-300 leading-relaxed">Offres ciblées, 2 modèles de CV PDF, simulateur d’entretien IA et quiz d’orientation intégré.</p>
+          <p class="text-xs text-slate-300 leading-relaxed">Match IA sur les offres, 3 modèles de CV PDF, kit candidature spontanée et simulateur d’entretien.</p>
           <div class="flex flex-col sm:flex-row gap-2.5 pt-1">
             <button onclick="go('offers')" class="py-3 px-4 rounded-xl bg-electric-500 font-semibold text-sm">Explorer les offres</button>
             <button onclick="go('auth')" class="py-3 px-4 rounded-xl bg-white/10 font-semibold text-sm">${u ? 'Changer de compte' : 'Connexion / Inscription'}</button>
@@ -420,19 +437,19 @@ function render() {
         <div class="grid grid-cols-2 gap-3">
           <button onclick="openAssistantTab('quiz')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-xs font-extrabold text-electric-500">🧭 Quiz Orientation</div>
-            <p class="text-[11px] text-slate-600 mt-1">Trouve quel secteur te correspond en 30 sec.</p>
+            <p class="text-[11px] text-slate-600 mt-1">Trouve ton secteur idéal en 30 sec.</p>
+          </button>
+          <button onclick="openAssistantTab('spontaneous')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">✉️ Candidature Spontanée</div>
+            <p class="text-[11px] text-slate-600 mt-1">Email + DM + script d’appel prêts à copier.</p>
           </button>
           <button onclick="openAssistantTab('interview')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
             <div class="text-xs font-extrabold text-electric-500">🎤 Simuler Entretien</div>
-            <p class="text-[11px] text-slate-600 mt-1">Entraîne-toi avec une note et des conseils IA.</p>
+            <p class="text-[11px] text-slate-600 mt-1">Note sur 100 et conseils personnalisés.</p>
           </button>
           <button onclick="go('cv')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-xs font-extrabold text-electric-500">📄 2 Modèles CV PDF</div>
-            <p class="text-[11px] text-slate-600 mt-1">Crée et exporte ton CV gratuitement.</p>
-          </button>
-          <button onclick="go('company')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-xs font-extrabold text-electric-500">🏢 Espace Entreprise</div>
-            <p class="text-[11px] text-slate-600 mt-1">Publie une annonce et gère tes candidats.</p>
+            <div class="text-xs font-extrabold text-electric-500">📄 3 Modèles CV PDF</div>
+            <p class="text-[11px] text-slate-600 mt-1">Score CV + export PDF gratuit.</p>
           </button>
         </div>
 
@@ -481,6 +498,7 @@ function render() {
     const apps = db.applications.filter(a => a.userId === u.id);
     const saved = db.saved.filter(s => s.userId === u.id);
     const interviews = apps.filter(a => a.status === 'ENTRETIEN').length;
+    const goalPct = Math.min(100, Math.round((apps.length / 3) * 100));
     app.innerHTML = `
       <div class="space-y-4 fade">
         <div class="bg-navy-900 text-white rounded-2xl p-5 flex justify-between items-center">
@@ -490,16 +508,26 @@ function render() {
           </div>
           <button onclick="go('offers')" class="px-3.5 py-2 rounded-xl bg-electric-500 text-xs font-semibold">Offres</button>
         </div>
+
+        <div class="bg-white p-4 rounded-2xl border space-y-2">
+          <div class="flex justify-between text-xs font-bold">
+            <span>🎯 Objectif semaine : ${Math.min(apps.length, 3)} / 3 candidatures</span>
+            <span class="text-electric-500">${goalPct}%</span>
+          </div>
+          <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-electric-500" style="width:${goalPct}%"></div></div>
+        </div>
+
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${apps.length}</div><div class="text-xs text-slate-500">Candidatures</div></div>
           <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-emerald-600">${interviews}</div><div class="text-xs text-slate-500">Entretiens</div></div>
           <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-electric-500">${saved.length}</div><div class="text-xs text-slate-500">Sauvegardées</div></div>
-          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${db.offers.length}</div><div class="text-xs text-slate-500">Offres actives</div></div>
+          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${computeCVScore(u)}%</div><div class="text-xs text-slate-500">Score CV</div></div>
         </div>
+
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Suivi de mes candidatures →</button>
-          <button onclick="openAssistantTab('interview')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🎤 Lancer le simulateur d’entretien →</button>
-          <button onclick="openAssistantTab('quiz')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🧭 Faire le quiz d’orientation →</button>
+          <button onclick="openAssistantTab('spontaneous')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">✉️ Générer une candidature spontanée →</button>
+          <button onclick="openAssistantTab('interview')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🎤 Simulateur d’entretien (noté) →</button>
+          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Suivi & favoris →</button>
           <button onclick="go('cv')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📄 Modifier / Exporter mon CV PDF →</button>
         </div>
       </div>`;
@@ -510,7 +538,7 @@ function render() {
     app.innerHTML = `
       <div class="space-y-4 fade">
         <div>
-          <h1 class="text-xl font-bold">Recherche d’offres</h1>
+          <h1 class="text-xl font-bold">Recherche d’offres (triées par Match IA)</h1>
           <p class="text-[11px] text-slate-500">Annonces [DÉMO] identifiées jusqu’à connexion à une source officielle.</p>
         </div>
         <div class="bg-white p-3.5 rounded-2xl border space-y-2.5">
@@ -548,11 +576,13 @@ function render() {
   else if (db.page === 'offer_detail') {
     const o = db.offers.find(x => x.id === db.selectedOfferId) || db.offers[0];
     const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
+    const match = computeMatch(o, u);
     app.innerHTML = `
       <div class="bg-white rounded-2xl p-5 border space-y-4 fade">
         <button onclick="go('offers')" class="text-xs font-semibold text-slate-500">← Retour aux offres</button>
-        <div class="flex gap-2 items-center">
+        <div class="flex flex-wrap gap-2 items-center">
           <span class="px-2.5 py-0.5 rounded-full bg-navy-900 text-white text-xs font-bold">${esc(o.contract)}</span>
+          <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-extrabold">⚡ ${match.score}% Match (${esc(match.reasons.join(' • '))})</span>
           ${o.isDemo ? '<span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">DÉMO</span>' : ''}
         </div>
         <h1 class="text-xl font-extrabold">${esc(o.title)}</h1>
@@ -561,7 +591,10 @@ function render() {
         <div class="space-y-2 border-t pt-3">
           <div class="flex justify-between items-center">
             <label class="text-xs font-bold">Message de candidature</label>
-            <button onclick="fillOfferCover('${o.id}')" class="text-xs font-semibold text-electric-500">✨ Rédiger avec l’IA</button>
+            <div class="flex gap-3">
+              <button onclick="copyText(document.getElementById('coverMsg').value)" class="text-xs font-semibold text-slate-500">📋 Copier</button>
+              <button onclick="fillOfferCover('${o.id}')" class="text-xs font-semibold text-electric-500">✨ Rédiger avec l’IA</button>
+            </div>
           </div>
           <textarea id="coverMsg" rows="4" class="w-full p-3 rounded-xl border text-xs" placeholder="Votre motivation..."></textarea>
           <button onclick="applyOffer('${o.id}', document.getElementById('coverMsg').value)" class="w-full py-3 rounded-xl ${hasApplied?'bg-emerald-600':'bg-electric-500'} text-white font-semibold text-sm">${hasApplied?'✓ Déjà candidaté':'Envoyer ma candidature'}</button>
@@ -578,9 +611,11 @@ function render() {
             <h1 class="text-lg font-bold">Créateur de CV IA</h1>
             <button onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-electric-500 text-white text-xs font-semibold">Exporter PDF</button>
           </div>
-          <div class="flex gap-2">
-            <button onclick="setCVTheme('startup')" class="flex-1 py-2 rounded-xl text-xs font-semibold border ${db.cvTheme==='startup'?'bg-navy-900 text-white border-navy-900':'bg-slate-50'}">Style Startup Bleu Nuit</button>
-            <button onclick="setCVTheme('clean')" class="flex-1 py-2 rounded-xl text-xs font-semibold border ${db.cvTheme==='clean'?'bg-navy-900 text-white border-navy-900':'bg-slate-50'}">Style Épuré Classique</button>
+          <div id="cvCompleteness"></div>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button onclick="setCVTheme('startup')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='startup'?'bg-navy-900 text-white':'bg-slate-50'}">Bleu Nuit</button>
+            <button onclick="setCVTheme('electric')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='electric'?'bg-electric-500 text-white':'bg-slate-50'}">Électrique</button>
+            <button onclick="setCVTheme('clean')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='clean'?'bg-navy-900 text-white':'bg-slate-50'}">Épuré</button>
           </div>
           <input value="${esc(cvUser.fullName)}" oninput="cvUserEdit('fullName',this.value)" placeholder="Nom" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <input value="${esc(cvUser.educationLevel)}" oninput="cvUserEdit('educationLevel',this.value)" placeholder="Formation" class="w-full px-3 py-2 rounded-xl border text-sm"/>
@@ -590,6 +625,8 @@ function render() {
           </div>
           <textarea id="cvSummaryInput" rows="3" oninput="cvUserEdit('summary',this.value)" class="w-full p-2.5 rounded-xl border text-xs">${esc(cvUser.summary)}</textarea>
           <input value="${esc(cvUser.skills)}" oninput="cvUserEdit('skills',this.value)" placeholder="Compétences (virgules)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+          <input value="${esc(cvUser.languages||'')}" oninput="cvUserEdit('languages',this.value)" placeholder="Langues (ex: Français, Anglais B1)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+          <input value="${esc(cvUser.interests||'')}" oninput="cvUserEdit('interests',this.value)" placeholder="Centres d’intérêt / Sport / Bénévolat" class="w-full px-3 py-2 rounded-xl border text-xs"/>
           <button onclick="addExp()" class="text-xs font-semibold text-electric-500">+ Ajouter une expérience</button>
         </div>
         <div id="cvPreviewBox" class="print-cv bg-white p-4 rounded-2xl border"></div>
@@ -598,7 +635,7 @@ function render() {
   }
 
   else if (db.page === 'assistant') {
-    const tabs = [['coach','💬 Coach IA'],['interview','🎤 Entretien'],['quiz','🧭 Orientation']];
+    const tabs = [['coach','💬 Coach'],['spontaneous','✉️ Spontanée'],['interview','🎤 Entretien'],['quiz','🧭 Quiz']];
     let bodyHtml = '';
 
     if (db.aiTab === 'coach') {
@@ -614,12 +651,41 @@ function render() {
           ${modes.map(([id,lbl])=>`<button onclick="db.aiMode='${id}';saveDB();render()" class="px-3 py-1.5 rounded-xl text-xs font-semibold ${db.aiMode===id?'bg-navy-900 text-white':'bg-slate-100'}">${lbl}</button>`).join('')}
         </div>
         <div class="h-64 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
-          ${db.aiMessages.map(m=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'bg-white border'}">${esc(m.text)}</div></div>`).join('')}
+          ${db.aiMessages.map((m,i)=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'bg-white border'}">${esc(m.text)}${m.role==='ai'?`<div class="mt-2 pt-1 border-t"><button onclick="copyText(db.aiMessages[${i}].text)" class="text-[10px] font-bold text-electric-500">📋 Copier la réponse</button></div>`:''}</div></div>`).join('')}
         </div>
         <form onsubmit="sendAI(event)" class="flex gap-2">
           <input id="aiInput" required placeholder="Votre question ou brouillon..." class="flex-1 px-3 py-2.5 rounded-xl border text-xs"/>
           <button class="px-4 py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Envoyer</button>
         </form>`;
+    }
+
+    else if (db.aiTab === 'spontaneous') {
+      const sr = db.spontResult;
+      bodyHtml = `
+        <div class="space-y-3">
+          <p class="text-xs text-slate-600">Génère 3 messages prêts à l’emploi pour démarcher directement une entreprise qui n’a pas publié d’annonce.</p>
+          <form onsubmit="generateSpontaneous(event)" class="space-y-2">
+            <input id="spComp" required placeholder="Nom de l’entreprise (ex : Boulangerie Paul, Décathlon...)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+            <input id="spRole" required placeholder="Ce que tu cherches (ex : stage d’observation, alternance vente)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+            <button class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">✨ Générer mon kit de contact</button>
+          </form>
+          ${sr ? `
+            <div class="space-y-2.5 pt-2">
+              <div class="p-3 rounded-xl bg-slate-50 border text-xs space-y-1.5">
+                <div class="flex justify-between font-bold"><span>📧 Email professionnel</span><button onclick="copyText(db.spontResult.email)" class="text-electric-500">📋 Copier</button></div>
+                <p class="whitespace-pre-line text-slate-700">${esc(sr.email)}</p>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-50 border text-xs space-y-1.5">
+                <div class="flex justify-between font-bold"><span>💬 Message court (LinkedIn / Insta)</span><button onclick="copyText(db.spontResult.dm)" class="text-electric-500">📋 Copier</button></div>
+                <p class="text-slate-700">${esc(sr.dm)}</p>
+              </div>
+              <div class="p-3 rounded-xl bg-blue-50 border border-blue-100 text-xs space-y-1.5">
+                <div class="flex justify-between font-bold"><span>📞 Script pour oser téléphoner</span><button onclick="copyText(db.spontResult.call)" class="text-electric-500">📋 Copier</button></div>
+                <p class="text-navy-900">${esc(sr.call)}</p>
+              </div>
+            </div>
+          ` : ''}
+        </div>`;
     }
 
     else if (db.aiTab === 'interview') {
@@ -686,8 +752,8 @@ function render() {
 
     app.innerHTML = `
       <div class="bg-white rounded-2xl p-4 border space-y-3 fade">
-        <div class="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
-          ${tabs.map(([id,lbl])=>`<button onclick="db.aiTab='${id}';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.aiTab===id?'bg-white text-navy-900 shadow-sm':'text-slate-500'}">${lbl}</button>`).join('')}
+        <div class="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl">
+          ${tabs.map(([id,lbl])=>`<button onclick="db.aiTab='${id}';saveDB();render()" class="py-2 rounded-lg text-[11px] font-bold ${db.aiTab===id?'bg-white text-navy-900 shadow-sm':'text-slate-500'}">${lbl}</button>`).join('')}
         </div>
         ${bodyHtml}
       </div>`;
@@ -696,23 +762,40 @@ function render() {
   else if (db.page === 'applications') {
     if (!u) return go('auth');
     const apps = db.applications.filter(a => a.userId === u.id);
+    const savedList = db.saved.filter(s => s.userId === u.id).map(s => db.offers.find(o => o.id === s.offerId)).filter(Boolean);
     const statuses = ['ENVOYEE','EN_ATTENTE','ENTRETIEN','REPONSE_RECUE','REFUSEE'];
     app.innerHTML = `
       <div class="space-y-4 fade">
-        <h1 class="text-xl font-bold">Suivi des candidatures (${apps.length})</h1>
-        ${apps.map(a => {
-          const o = db.offers.find(x => x.id === a.offerId) || { title: 'Offre', companyName: '' };
-          return `
-          <div class="bg-white p-4 rounded-2xl border space-y-2">
-            <div class="flex justify-between items-start gap-2">
-              <div><div class="font-bold text-sm">${esc(o.title)}</div><div class="text-xs text-slate-500">${esc(o.companyName)}</div></div>
-              <select onchange="changeAppStatus('${a.id}',this.value)" class="px-2.5 py-1.5 rounded-lg border text-xs font-semibold bg-slate-50">
-                ${statuses.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}
-              </select>
+        <div class="grid grid-cols-2 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+          <button onclick="db.appTab='apps';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='apps'?'bg-white shadow-sm':'text-slate-600'}">Candidatures (${apps.length})</button>
+          <button onclick="db.appTab='saved';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='saved'?'bg-white shadow-sm':'text-slate-600'}">Favoris (${savedList.length})</button>
+        </div>
+
+        ${db.appTab === 'apps' ? (
+          apps.map(a => {
+            const o = db.offers.find(x => x.id === a.offerId) || { title: 'Offre', companyName: '' };
+            return `
+            <div class="bg-white p-4 rounded-2xl border space-y-2">
+              <div class="flex justify-between items-start gap-2">
+                <div><div class="font-bold text-sm">${esc(o.title)}</div><div class="text-xs text-slate-500">${esc(o.companyName)}</div></div>
+                <select onchange="changeAppStatus('${a.id}',this.value)" class="px-2.5 py-1.5 rounded-lg border text-xs font-semibold bg-slate-50">
+                  ${statuses.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}
+                </select>
+              </div>
+              ${a.reply ? `<div class="p-2.5 rounded-xl bg-blue-50 text-xs"><strong>Réponse :</strong> ${esc(a.reply)}</div>` : ''}
+            </div>`;
+          }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune candidature envoyée. Explorez les offres !</div>'
+        ) : (
+          savedList.map(o => `
+            <div class="bg-white p-4 rounded-2xl border flex justify-between items-center gap-2">
+              <div onclick="go('offer_detail','${o.id}')" class="cursor-pointer">
+                <div class="font-bold text-sm">${esc(o.title)}</div>
+                <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)}</div>
+              </div>
+              <button onclick="go('offer_detail','${o.id}')" class="px-3 py-1.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Ouvrir</button>
             </div>
-            ${a.reply ? `<div class="p-2.5 rounded-xl bg-blue-50 text-xs"><strong>Réponse :</strong> ${esc(a.reply)}</div>` : ''}
-          </div>`;
-        }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune candidature envoyée. Explorez les offres !</div>'}
+          `).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre sauvegardée pour l’instant.</div>'
+        )}
       </div>`;
   }
 
@@ -734,6 +817,13 @@ function render() {
           <input value="${esc(u.city)}" onchange="cvUserEdit('city',this.value)" class="w-full px-3 py-2 rounded-xl border"/>
           <label class="font-semibold block pt-1">Formation</label>
           <input value="${esc(u.educationLevel||'')}" onchange="cvUserEdit('educationLevel',this.value)" class="w-full px-3 py-2 rounded-xl border"/>
+          <label class="font-semibold block pt-1">Contrat recherché</label>
+          <select onchange="cvUserEdit('contractType',this.value)" class="w-full px-3 py-2 rounded-xl border bg-white">
+            <option ${u.contractType==='STAGE'?'selected':''} value="STAGE">Stage</option>
+            <option ${u.contractType==='ALTERNANCE'?'selected':''} value="ALTERNANCE">Alternance</option>
+            <option ${u.contractType==='PREMIER_EMPLOI'?'selected':''} value="PREMIER_EMPLOI">Premier emploi</option>
+            <option ${u.contractType==='IMMERSION'?'selected':''} value="IMMERSION">Immersion</option>
+          </select>
         </div>
         <div class="pt-3 border-t flex justify-between items-center">
           <button onclick="deleteMyAccount()" class="px-3.5 py-2 rounded-xl bg-red-600 text-white text-xs font-semibold">Supprimer compte (RGPD)</button>
@@ -820,7 +910,8 @@ function registerUser(e) {
     city: document.getElementById('regCity').value,
     birthDate: dob, guardianEmail: guardian,
     educationLevel: document.getElementById('regLevel')?.value || 'Lycée',
-    plan: 'FREE', summary: 'Motivé(e) pour apprendre en entreprise.', skills: 'Sérieux, Travail en équipe', experiences: [],
+    contractType: 'STAGE', availability: 'Dès que possible',
+    plan: 'FREE', summary: 'Motivé(e) pour apprendre en entreprise.', skills: 'Sérieux, Travail en équipe', languages: 'Français', interests: '', experiences: [],
     ...(role === 'COMPANY' ? { company: { name: document.getElementById('regCompName').value || document.getElementById('regName').value, sector: 'Tech', city: document.getElementById('regCity').value, verified: false } } : {})
   });
   db.currentUserId = id; saveDB(); toast('Compte créé !'); go(role === 'COMPANY' ? 'company' : 'dashboard');
