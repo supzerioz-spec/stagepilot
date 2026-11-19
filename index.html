@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="theme-color" content="#0A1628" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>StagePilot V3 – Stages & Alternances IA</title>
+  <title>StagePilot V4 – Stages & Alternances IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     if (window.tailwind) {
       tailwind.config = {
@@ -23,7 +24,7 @@
     }
   </script>
   <style>
-    body { background: #F8FAFC; color: #0A1628; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: #F8FAFC; color: #0A1628; font-family: system-ui, -apple-system, sans-serif; transition: background .2s, color .2s; }
     .bg-navy-900 { background-color: #0A1628; }
     .bg-navy-800 { background-color: #122442; }
     .bg-electric-500 { background-color: #2563EB; }
@@ -31,9 +32,18 @@
     .text-electric-400 { color: #3B82F6; }
     .fade { animation: fadeUp .22s ease-out; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Mode Sombre V4 */
+    body.dark { background: #060E1A; color: #F1F5F9; }
+    body.dark .card { background: #0F1E36 !important; border-color: #1E3356 !important; color: #F1F5F9 !important; }
+    body.dark .soft-box { background: #132544 !important; border-color: #213B66 !important; color: #E2E8F0 !important; }
+    body.dark .muted { color: #94A3B8 !important; }
+    body.dark input, body.dark select, body.dark textarea { background: #0A1628 !important; color: #F8FAFC !important; border-color: #26406B !important; }
+    body.dark nav.bottom-nav { background: #0A1628 !important; border-color: #1E3356 !important; }
+
     @media print {
       .no-print { display: none !important; }
-      body { background: #fff !important; }
+      body { background: #fff !important; color: #0A1628 !important; }
       .print-cv { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
     }
   </style>
@@ -42,18 +52,21 @@
 
   <!-- Header -->
   <header class="no-print sticky top-0 z-40 bg-navy-900 text-white border-b border-navy-800">
-    <div class="max-w-5xl mx-auto px-3 h-14 flex items-center justify-between">
-      <button onclick="go('home')" class="flex items-center gap-2 font-bold text-base">
+    <div class="max-w-5xl mx-auto px-3 h-14 flex items-center justify-between gap-2">
+      <button onclick="go('home')" class="flex items-center gap-2 font-bold text-base shrink-0">
         <span class="w-7 h-7 rounded-lg bg-electric-500 flex items-center justify-center">
           <i data-lucide="sparkles" class="w-4 h-4"></i>
         </span>
         Stage<span class="text-electric-400">Pilot</span>
       </button>
-      <div class="flex items-center gap-1.5 text-xs">
-        <button onclick="go('dashboard')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Bord</button>
-        <button onclick="go('applications')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Suivi</button>
-        <button onclick="go('company')" class="px-2.5 py-1.5 rounded-lg bg-navy-800">Pro</button>
-        <button onclick="go('premium')" class="px-2.5 py-1.5 rounded-lg bg-electric-500 font-semibold">Premium</button>
+      <div class="flex items-center gap-1 text-xs">
+        <button onclick="toggleDark()" title="Mode Sombre/Clair" class="p-1.5 rounded-lg bg-navy-800">
+          <i id="darkIcon" data-lucide="moon" class="w-4 h-4"></i>
+        </button>
+        <button onclick="go('dashboard')" class="px-2 py-1.5 rounded-lg bg-navy-800">Bord</button>
+        <button onclick="go('applications')" class="px-2 py-1.5 rounded-lg bg-navy-800">Suivi</button>
+        <button onclick="go('company')" class="px-2 py-1.5 rounded-lg bg-navy-800">Pro</button>
+        <button onclick="go('premium')" class="px-2 py-1.5 rounded-lg bg-electric-500 font-semibold">Premium</button>
       </div>
     </div>
   </header>
@@ -62,7 +75,7 @@
   <main id="app" class="flex-1 max-w-5xl w-full mx-auto px-3 py-5 pb-24"></main>
 
   <!-- Barre inférieure mobile -->
-  <nav class="no-print fixed bottom-0 inset-x-0 z-50 bg-white border-t border-slate-200 px-1 py-1.5 flex justify-around items-center shadow-lg">
+  <nav class="no-print bottom-nav fixed bottom-0 inset-x-0 z-50 bg-white border-t border-slate-200 px-1 py-1.5 flex justify-around items-center shadow-lg">
     <button onclick="go('home')" data-nav="home" class="nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium">
       <i data-lucide="home" class="w-5 h-5"></i><span>Accueil</span>
     </button>
@@ -81,20 +94,40 @@
   </nav>
 
 <script>
+// === CONFIGURATION SUPABASE GRATUITE (0 € sans CB) ===
+// Laissez vide pour le mode local, ou collez votre URL et votre clé publique "anon / publishable" Supabase :
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
 const DB_KEY = 'stagepilot_mobile_v2';
+
+const GUIDE_STEPS = [
+  '1. Vérifier les dates autorisées avec mon collège, lycée ou faculté',
+  '2. Demander le modèle officiel de convention de stage à mon établissement',
+  '3. Vérifier mon attestation d’assurance responsabilité civile',
+  '4. Faire signer la convention (élève, parents si mineur, entreprise, école)',
+  '5. Connaître mes droits (mineur : max 35h/semaine, pas de travail de nuit)',
+  '6. Préparer mon trajet, ma tenue et un carnet pour le 1er jour'
+];
 
 const defaultDB = {
   page: 'home',
+  dark: false,
   selectedOfferId: null,
   currentUserId: null,
   filters: { q: '', city: '', sector: '', level: '', contract: '' },
-  aiTab: 'coach', // coach | interview | quiz | spontaneous
+  aiTab: 'coach', // coach | spontaneous | interview | quiz | guide
   aiMode: 'chat',
-  cvTheme: 'startup', // startup | electric | clean
-  appTab: 'apps', // apps | saved
+  cvTheme: 'startup',
+  appTab: 'apps',
   spontResult: null,
+  followupText: '',
+  checklist: [false, false, false, false, false, false],
   aiMessages: [
-    { role: 'ai', text: 'Bienvenue sur StagePilot V3 ! Teste le Match IA sur les offres, le Kit Candidature Spontanée, le Simulateur d’entretien ou le CV Bleu Électrique.' }
+    { role: 'ai', text: 'Bienvenue sur StagePilot V4 ! Découvre le Mode Sombre, le Guide Convention de stage et la Relance après 7 jours.' }
   ],
   sim: { step: 0, sector: 'Numérique & Tech', level: 'Lycée', history: [] },
   quiz: { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null },
@@ -139,6 +172,7 @@ function loadDB() {
       ...parsed,
       sim: parsed.sim || JSON.parse(JSON.stringify(defaultDB.sim)),
       quiz: parsed.quiz || JSON.parse(JSON.stringify(defaultDB.quiz)),
+      checklist: parsed.checklist || [false, false, false, false, false, false],
       aiTab: parsed.aiTab || 'coach',
       cvTheme: parsed.cvTheme || 'startup',
       appTab: parsed.appTab || 'apps'
@@ -157,6 +191,13 @@ function calcAge(dob) {
 }
 function isMinor(u) { const a = calcAge(u?.birthDate); return a !== null && a < 18; }
 
+function applyDark() {
+  document.body.classList.toggle('dark', Boolean(db.dark));
+  const icon = document.getElementById('darkIcon');
+  if (icon) icon.setAttribute('data-lucide', db.dark ? 'sun' : 'moon');
+}
+function toggleDark() { db.dark = !db.dark; saveDB(); applyDark(); render(); }
+
 function go(page, offerId = null) {
   db.page = page;
   if (offerId) db.selectedOfferId = offerId;
@@ -164,12 +205,11 @@ function go(page, offerId = null) {
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-
 function openAssistantTab(tab) { db.aiTab = tab; go('assistant'); }
 
 function toast(msg) {
   const el = document.createElement('div');
-  el.className = 'fixed top-16 inset-x-4 max-w-md mx-auto z-50 bg-navy-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl text-center fade';
+  el.className = 'fixed top-16 inset-x-4 max-w-md mx-auto z-50 bg-navy-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl text-center fade border border-electric-500';
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2600);
@@ -183,18 +223,31 @@ function copyText(txt) {
   }
 }
 
-// V3 : Calcul du Match IA % entre le candidat et une offre
+// Synchronisation Cloud optionnelle avec Supabase (0 €)
+async function syncFromSupabase() {
+  if (!sb) return;
+  try {
+    const { data: cloudOffers } = await sb.from('offers').select('*').eq('is_active', true).order('created_at', { ascending: false });
+    if (cloudOffers && cloudOffers.length > 0) {
+      const mapped = cloudOffers.map(o => ({
+        id: o.id, companyId: o.company_id, companyName: o.company_name,
+        title: o.title, city: o.city, sector: o.sector, level: o.education_level,
+        contract: o.contract_type, duration: o.duration, isDemo: false, desc: o.description
+      }));
+      db.offers = [...mapped, ...defaultDB.offers];
+      saveDB();
+      render();
+    }
+  } catch (e) { console.warn('Sync Supabase:', e); }
+}
+
 function computeMatch(offer, user) {
   if (!user || user.role !== 'CANDIDATE') return { score: 80, reasons: ['Offre adaptée aux 15–25 ans'] };
   let score = 58;
   const reasons = [];
-  if (user.city && offer.city.toLowerCase().includes(user.city.toLowerCase())) {
-    score += 18; reasons.push('Même ville');
-  }
-  if (user.contractType && offer.contract === user.contractType) {
-    score += 12; reasons.push('Contrat visé');
-  }
-  if (user.educationLevel && (offer.level.toLowerCase().includes(user.educationLevel.toLowerCase().split(' ')[0]) || offer.level.includes('Lycée') && user.educationLevel.includes('Lycée'))) {
+  if (user.city && offer.city.toLowerCase().includes(user.city.toLowerCase())) { score += 18; reasons.push('Même ville'); }
+  if (user.contractType && offer.contract === user.contractType) { score += 12; reasons.push('Contrat visé'); }
+  if (user.educationLevel && (offer.level.toLowerCase().includes(user.educationLevel.toLowerCase().split(' ')[0]) || (offer.level.includes('Lycée') && user.educationLevel.includes('Lycée')))) {
     score += 10; reasons.push('Niveau adapté');
   }
   if (user.skills && user.skills.split(',').some(s => offer.desc.toLowerCase().includes(s.trim().toLowerCase()) || offer.title.toLowerCase().includes(s.trim().toLowerCase()))) {
@@ -203,7 +256,6 @@ function computeMatch(offer, user) {
   return { score: Math.min(98, score), reasons: reasons.length ? reasons : ['Profil compatible'] };
 }
 
-// V3 : Score de complétude du CV
 function computeCVScore(cvUser) {
   let pts = 20;
   if (cvUser.fullName && cvUser.fullName.length > 3) pts += 15;
@@ -231,7 +283,6 @@ function runLocalAI(mode, prompt, level, user) {
   return `💡 Conseil StagePilot (${lvl}) :\nPour « ${prompt} » :\n• Personnalisez les 2 premières phrases de votre message.\n• Mettez en avant vos atouts (${skills}).\n• Relancez poliment après 5 jours ouvrés.`;
 }
 
-// V3 : Générateur Candidature Spontanée (Email + Message court + Script appel)
 function generateSpontaneous(e) {
   e.preventDefault();
   const company = document.getElementById('spComp').value.trim() || 'votre entreprise';
@@ -246,11 +297,23 @@ function generateSpontaneous(e) {
     dm: `Bonjour ! Je suis étudiant(e) en ${lvl} et je suis de près les projets de ${company}. Je cherche actuellement ${role} et j’aimerais savoir si vous accueillez des jeunes motivés dans votre équipe. Merci beaucoup !`,
     call: `« Bonjour, je m’appelle ${name}, je suis en ${lvl}. Je vous appelle car votre entreprise ${company} m’intéresse beaucoup et je recherche ${role}. Auriez-vous une adresse email à qui envoyer mon CV ou une personne à contacter ? Merci beaucoup pour votre aide ! »`
   };
-  saveDB();
-  render();
+  saveDB(); render();
 }
 
-// Simulateur d'entretien
+function generateFollowup(e) {
+  e.preventDefault();
+  const comp = document.getElementById('fuComp').value.trim() || 'votre entreprise';
+  const kind = document.getElementById('fuKind').value;
+  const u = currentUser() || db.users[0];
+  const name = u.fullName || 'Prénom Nom';
+  if (kind === 'after_interview') {
+    db.followupText = `Objet : Suite à notre entretien – ${name}\n\nBonjour,\n\nJe tenais à vous remercier pour notre échange de la semaine dernière au sujet de l’opportunité chez ${comp}. Cet entretien a confirmé ma motivation à rejoindre votre équipe.\n\nJe reste bien sûr à votre disposition si vous avez besoin d’informations complémentaires.\n\nBien cordialement,\n${name}`;
+  } else {
+    db.followupText = `Objet : Relance candidature – ${name}\n\nBonjour,\n\nJe me permets de revenir vers vous suite à ma candidature envoyée il y a 7 jours pour rejoindre ${comp}. Je suis toujours très motivé(e) pour intégrer votre équipe et apprendre à vos côtés.\n\nAuriez-vous eu le temps de consulter mon profil ?\n\nBien cordialement,\n${name}`;
+  }
+  saveDB(); render();
+}
+
 const SIM_QUESTIONS = [
   '1/4 — Présentez-vous en quelques phrases : quelle est votre formation et qu’est-ce qui vous motive ?',
   '2/4 — Pourquoi avez-vous envie de rejoindre une entreprise dans ce secteur ?',
@@ -286,12 +349,10 @@ function submitSimAnswer(e) {
   const ev = evaluateSimAnswer(step, answer, db.sim.level);
   db.sim.history.push({ q: SIM_QUESTIONS[step], a: answer, score: ev.score, feedback: ev.feedback });
   db.sim.step = step + 1;
-  saveDB();
-  render();
+  saveDB(); render();
 }
 function resetSim() { db.sim.step = 0; db.sim.history = []; saveDB(); render(); }
 
-// Quiz Orientation
 const QUIZ_QUESTIONS = [
   { q: '1/4 — Quand tu as du temps libre, qu’est-ce que tu préfères faire ?', opts: [['tech', 'Bidouiller sur ordi/téléphone, comprendre les applis'], ['design', 'Dessiner, montage vidéo ou soigner l’esthétique'], ['comm', 'Créer des posts, écrire, animer des réseaux'], ['commerce', 'Discuter, conseiller les gens, organiser ou vendre']] },
   { q: '2/4 — Quel environnement te donne le plus envie ?', opts: [['tech', 'Un bureau ou startup tech avec des projets numériques'], ['design', 'Un studio créatif où l’on imagine des visuels'], ['comm', 'Une agence média, culturelle ou événementielle'], ['commerce', 'Un lieu vivant au contact direct des clients']] },
@@ -313,6 +374,8 @@ function pickQuizOption(cat) {
 function resetQuiz() { db.quiz = { step: 0, scores: { tech: 0, design: 0, comm: 0, commerce: 0 }, result: null }; saveDB(); render(); }
 function launchRecommendedOffers(sector) { db.filters = { q: '', city: '', sector, level: '', contract: '' }; go('offers'); }
 
+function toggleGuideStep(idx) { db.checklist[idx] = !db.checklist[idx]; saveDB(); render(); }
+
 function renderOffersList() {
   const box = document.getElementById('offersList');
   if (!box) return;
@@ -333,24 +396,24 @@ function renderOffersList() {
     const isSaved = u && db.saved.some(s => s.userId === u.id && s.offerId === o.id);
     const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
     return `
-    <div class="bg-white p-4 rounded-2xl border shadow-sm space-y-2.5">
+    <div class="card bg-white p-4 rounded-2xl border shadow-sm space-y-2.5">
       <div class="flex justify-between items-start gap-2">
         <div class="flex flex-wrap gap-1.5 items-center">
           <span class="px-2 py-0.5 rounded-full bg-navy-900 text-white text-[10px] font-bold">${esc(o.contract)}</span>
           <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold">⚡ ${o.match.score}% Match</span>
-          ${o.isDemo ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">DÉMO</span>' : ''}
+          ${o.isDemo ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">DÉMO</span>' : '<span class="px-2 py-0.5 rounded-full bg-blue-100 text-electric-500 text-[10px] font-bold">CLOUD</span>'}
         </div>
-        <button onclick="toggleSave('${o.id}')" class="px-2.5 py-1 rounded-lg border text-xs ${isSaved?'bg-blue-50 border-electric-500 text-electric-500 font-bold':'text-slate-400'}">${isSaved?'★ Sauvée':'☆ Sauver'}</button>
+        <button onclick="toggleSave('${o.id}')" class="px-2.5 py-1 rounded-lg border text-xs ${isSaved?'bg-blue-50 border-electric-500 text-electric-500 font-bold':'muted'}">${isSaved?'★ Sauvée':'☆ Sauver'}</button>
       </div>
       <div onclick="go('offer_detail','${o.id}')" class="font-bold text-base cursor-pointer">${esc(o.title)}</div>
-      <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
-      <p class="text-xs text-slate-600">${esc(o.desc)}</p>
+      <div class="text-xs muted">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
+      <p class="text-xs muted">${esc(o.desc)}</p>
       <div class="flex gap-2 pt-1">
         <button onclick="go('offer_detail','${o.id}')" class="flex-1 py-2 rounded-xl border text-xs font-semibold">Voir fiche</button>
         <button onclick="applyOffer('${o.id}')" class="flex-1 py-2 rounded-xl ${hasApplied?'bg-emerald-50 text-emerald-700':'bg-electric-500 text-white'} text-xs font-semibold">${hasApplied?'✓ Candidaté':'Candidater'}</button>
       </div>
     </div>`;
-  }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre trouvée. <button onclick="db.filters={q:\'\',city:\'\',sector:\'\',level:\'\',contract:\'\'};saveDB();render()" class="text-electric-500 underline ml-1">Réinitialiser</button></div>';
+  }).join('') || '<div class="card bg-white p-6 rounded-2xl text-center text-xs muted">Aucune offre trouvée. <button onclick="db.filters={q:\'\',city:\'\',sector:\'\',level:\'\',contract:\'\'};saveDB();render()" class="text-electric-500 underline ml-1">Réinitialiser</button></div>';
 }
 
 function renderCVPreview() {
@@ -380,7 +443,7 @@ function renderCVPreview() {
     const headerCls = db.cvTheme === 'electric' ? 'bg-electric-500 text-white' : 'bg-navy-900 text-white';
     const badgeCls = db.cvTheme === 'electric' ? 'bg-navy-900 text-white' : 'bg-electric-500 text-white';
     box.innerHTML = `
-      <div class="overflow-hidden rounded-xl border border-slate-200">
+      <div class="overflow-hidden rounded-xl border border-slate-200 text-navy-900 bg-white">
         <div class="${headerCls} p-5 flex items-center gap-3.5">
           <div class="w-12 h-12 rounded-xl ${badgeCls} flex items-center justify-center font-extrabold text-lg shrink-0">${esc(initials)}</div>
           <div>
@@ -391,13 +454,13 @@ function renderCVPreview() {
         <div class="p-5 space-y-3.5 bg-white">
           <div><div class="text-[11px] font-bold uppercase text-electric-500">Profil</div><p class="text-xs mt-1 text-slate-700 leading-relaxed">${esc(cvUser.summary)}</p></div>
           <div><div class="text-[11px] font-bold uppercase text-electric-500">Compétences</div><div class="flex flex-wrap gap-1.5 mt-1">${(cvUser.skills||'').split(',').filter(Boolean).map(s=>`<span class="px-2.5 py-0.5 rounded-full bg-blue-50 text-navy-900 text-[11px] font-semibold">${esc(s.trim())}</span>`).join('')}</div></div>
-          <div><div class="text-[11px] font-bold uppercase text-electric-500">Expériences & Projets</div>${expHtml || '<p class="text-xs text-slate-400 mt-1">Ajoutez une expérience ou un projet scolaire.</p>'}</div>
+          <div><div class="text-[11px] font-bold uppercase text-electric-500">Expériences & Projets</div>${expHtml || '<p class="text-xs text-slate-400 mt-1">Ajoutez une expérience.</p>'}</div>
           ${extraSections}
         </div>
       </div>`;
   } else {
     box.innerHTML = `
-      <div class="space-y-3.5">
+      <div class="space-y-3.5 bg-white text-navy-900 p-2">
         <div class="border-b-2 border-navy-900 pb-3">
           <h2 class="text-xl font-extrabold">${esc(cvUser.fullName)}</h2>
           <p class="text-xs font-semibold text-electric-500">${esc(cvUser.educationLevel)} • ${esc(cvUser.city)}</p>
@@ -411,23 +474,29 @@ function renderCVPreview() {
 }
 
 function render() {
+  applyDark();
   const u = currentUser();
   const app = document.getElementById('app');
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
     const active = btn.dataset.nav === db.page || (db.page === 'offer_detail' && btn.dataset.nav === 'offers');
-    btn.className = `nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium ${active ? 'text-electric-500 bg-blue-50 font-semibold' : 'text-slate-500'}`;
+    btn.className = `nav-btn flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[11px] font-medium ${active ? 'text-electric-500 bg-blue-50/90 font-semibold' : 'muted'}`;
   });
 
   if (db.page === 'home') {
     app.innerHTML = `
       <div class="space-y-4 fade">
-        <div class="bg-navy-900 text-white rounded-2xl p-6 space-y-4">
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-800 text-electric-400 text-[11px] font-semibold">
-            ✨ StagePilot V3 • 15–25 ans • 0 €
-          </span>
+        <div class="bg-navy-900 text-white rounded-2xl p-6 space-y-4 border border-navy-800">
+          <div class="flex justify-between items-center">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-navy-800 text-electric-400 text-[11px] font-semibold">
+              ✨ StagePilot V4 • 15–25 ans • 0 €
+            </span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full ${sb ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-300'}">
+              ${sb ? '☁️ Cloud Supabase actif' : '📱 Mode Local'}
+            </span>
+          </div>
           <h1 class="text-2xl font-extrabold leading-tight">Ton stage ou ton alternance, <span class="text-electric-400">piloté par l’IA.</span></h1>
-          <p class="text-xs text-slate-300 leading-relaxed">Match IA sur les offres, 3 modèles de CV PDF, kit candidature spontanée et simulateur d’entretien.</p>
+          <p class="text-xs text-slate-300 leading-relaxed">Match IA, 3 modèles de CV PDF, kit spontané & relance 7 jours, guide convention de stage et simulateur d’entretien.</p>
           <div class="flex flex-col sm:flex-row gap-2.5 pt-1">
             <button onclick="go('offers')" class="py-3 px-4 rounded-xl bg-electric-500 font-semibold text-sm">Explorer les offres</button>
             <button onclick="go('auth')" class="py-3 px-4 rounded-xl bg-white/10 font-semibold text-sm">${u ? 'Changer de compte' : 'Connexion / Inscription'}</button>
@@ -435,21 +504,21 @@ function render() {
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <button onclick="openAssistantTab('quiz')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-xs font-extrabold text-electric-500">🧭 Quiz Orientation</div>
-            <p class="text-[11px] text-slate-600 mt-1">Trouve ton secteur idéal en 30 sec.</p>
+          <button onclick="openAssistantTab('guide')" class="card text-left bg-white p-4 rounded-2xl border shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">📜 Guide Convention</div>
+            <p class="text-[11px] muted mt-1">Toutes les démarches 15–25 ans étape par étape.</p>
           </button>
-          <button onclick="openAssistantTab('spontaneous')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-xs font-extrabold text-electric-500">✉️ Candidature Spontanée</div>
-            <p class="text-[11px] text-slate-600 mt-1">Email + DM + script d’appel prêts à copier.</p>
+          <button onclick="openAssistantTab('spontaneous')" class="card text-left bg-white p-4 rounded-2xl border shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">✉️ Spontanée & Relance</div>
+            <p class="text-[11px] muted mt-1">Email + DM + relance après 7 jours.</p>
           </button>
-          <button onclick="openAssistantTab('interview')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <button onclick="openAssistantTab('interview')" class="card text-left bg-white p-4 rounded-2xl border shadow-sm">
             <div class="text-xs font-extrabold text-electric-500">🎤 Simuler Entretien</div>
-            <p class="text-[11px] text-slate-600 mt-1">Note sur 100 et conseils personnalisés.</p>
+            <p class="text-[11px] muted mt-1">Note sur 100 et conseils personnalisés.</p>
           </button>
-          <button onclick="go('cv')" class="text-left bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="text-xs font-extrabold text-electric-500">📄 3 Modèles CV PDF</div>
-            <p class="text-[11px] text-slate-600 mt-1">Score CV + export PDF gratuit.</p>
+          <button onclick="openAssistantTab('quiz')" class="card text-left bg-white p-4 rounded-2xl border shadow-sm">
+            <div class="text-xs font-extrabold text-electric-500">🧭 Quiz Orientation</div>
+            <p class="text-[11px] muted mt-1">Trouve ton secteur idéal en 30 sec.</p>
           </button>
         </div>
 
@@ -461,27 +530,28 @@ function render() {
 
   else if (db.page === 'auth') {
     app.innerHTML = `
-      <div class="max-w-md mx-auto bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 fade">
+      <div class="card max-w-md mx-auto bg-white rounded-2xl p-5 border shadow-sm space-y-4 fade">
         <h1 class="text-lg font-bold">Connexion rapide ou Inscription</h1>
         <div class="grid grid-cols-2 gap-2">
           <button onclick="loginDemo('u_lucas')" class="py-2.5 px-3 rounded-xl bg-blue-50 text-electric-500 text-xs font-bold">Tester Candidat (Lucas, 17 ans)</button>
           <button onclick="loginDemo('u_pro')" class="py-2.5 px-3 rounded-xl bg-navy-900 text-white text-xs font-bold">Tester Entreprise (NovaTech)</button>
         </div>
-        <hr/>
+        <hr class="border-slate-200"/>
         <form onsubmit="registerUser(event)" class="space-y-3">
-          <div class="text-xs font-bold text-slate-700">Ou créer un nouveau compte :</div>
-          <select id="regRole" onchange="document.getElementById('candFields').style.display=this.value==='CANDIDATE'?'block':'none';document.getElementById('compFields').style.display=this.value==='COMPANY'?'block':'none';" class="w-full px-3 py-2 rounded-xl border text-sm bg-white">
+          <div class="text-xs font-bold">Ou créer un nouveau compte :</div>
+          <select id="regRole" onchange="document.getElementById('candFields').style.display=this.value==='CANDIDATE'?'block':'none';document.getElementById('compFields').style.display=this.value==='COMPANY'?'block':'none';" class="w-full px-3 py-2 rounded-xl border text-sm">
             <option value="CANDIDATE">Jeune (15–25 ans)</option>
             <option value="COMPANY">Entreprise</option>
           </select>
           <input id="regName" required placeholder="Nom complet" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <input id="regEmail" type="email" required placeholder="Email" class="w-full px-3 py-2 rounded-xl border text-sm"/>
+          <input id="regPass" type="password" placeholder="Mot de passe (min 6 car.)" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <input id="regCity" required placeholder="Ville (ex: Lyon)" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <div id="candFields" class="space-y-2">
-            <label class="text-[11px] text-slate-500">Date de naissance (reste privée) :</label>
+            <label class="text-[11px] muted">Date de naissance (reste privée) :</label>
             <input id="regDob" type="date" class="w-full px-3 py-2 rounded-xl border text-sm"/>
             <input id="regGuardian" type="email" placeholder="Email parent / référent (obligatoire si < 18 ans)" class="w-full px-3 py-2 rounded-xl border text-sm"/>
-            <select id="regLevel" class="w-full px-3 py-2 rounded-xl border text-sm bg-white">
+            <select id="regLevel" class="w-full px-3 py-2 rounded-xl border text-sm">
               <option>Collège / Lycée</option><option>Terminale / Bac</option><option>BTS / Bac+2</option><option>Licence / Bac+3</option><option>Master / Bac+5</option>
             </select>
           </div>
@@ -508,27 +578,24 @@ function render() {
           </div>
           <button onclick="go('offers')" class="px-3.5 py-2 rounded-xl bg-electric-500 text-xs font-semibold">Offres</button>
         </div>
-
-        <div class="bg-white p-4 rounded-2xl border space-y-2">
+        <div class="card bg-white p-4 rounded-2xl border space-y-2">
           <div class="flex justify-between text-xs font-bold">
             <span>🎯 Objectif semaine : ${Math.min(apps.length, 3)} / 3 candidatures</span>
             <span class="text-electric-500">${goalPct}%</span>
           </div>
           <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-electric-500" style="width:${goalPct}%"></div></div>
         </div>
-
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${apps.length}</div><div class="text-xs text-slate-500">Candidatures</div></div>
-          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-emerald-600">${interviews}</div><div class="text-xs text-slate-500">Entretiens</div></div>
-          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-electric-500">${saved.length}</div><div class="text-xs text-slate-500">Sauvegardées</div></div>
-          <div class="bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${computeCVScore(u)}%</div><div class="text-xs text-slate-500">Score CV</div></div>
+          <div class="card bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${apps.length}</div><div class="text-xs muted">Candidatures</div></div>
+          <div class="card bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-emerald-600">${interviews}</div><div class="text-xs muted">Entretiens</div></div>
+          <div class="card bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold text-electric-500">${saved.length}</div><div class="text-xs muted">Sauvegardées</div></div>
+          <div class="card bg-white p-4 rounded-2xl border"><div class="text-2xl font-extrabold">${computeCVScore(u)}%</div><div class="text-xs muted">Score CV</div></div>
         </div>
-
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button onclick="openAssistantTab('spontaneous')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">✉️ Générer une candidature spontanée →</button>
-          <button onclick="openAssistantTab('interview')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">🎤 Simulateur d’entretien (noté) →</button>
-          <button onclick="go('applications')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📋 Suivi & favoris →</button>
-          <button onclick="go('cv')" class="bg-white p-4 rounded-2xl border text-left font-bold text-sm">📄 Modifier / Exporter mon CV PDF →</button>
+          <button onclick="openAssistantTab('guide')" class="card bg-white p-4 rounded-2xl border text-left font-bold text-sm">📜 Checklist Convention de stage →</button>
+          <button onclick="openAssistantTab('spontaneous')" class="card bg-white p-4 rounded-2xl border text-left font-bold text-sm">✉️ Candidature spontanée & Relance 7j →</button>
+          <button onclick="openAssistantTab('interview')" class="card bg-white p-4 rounded-2xl border text-left font-bold text-sm">🎤 Simulateur d’entretien (noté) →</button>
+          <button onclick="go('cv')" class="card bg-white p-4 rounded-2xl border text-left font-bold text-sm">📄 Modifier / Exporter mon CV PDF →</button>
         </div>
       </div>`;
   }
@@ -539,27 +606,27 @@ function render() {
       <div class="space-y-4 fade">
         <div>
           <h1 class="text-xl font-bold">Recherche d’offres (triées par Match IA)</h1>
-          <p class="text-[11px] text-slate-500">Annonces [DÉMO] identifiées jusqu’à connexion à une source officielle.</p>
+          <p class="text-[11px] muted">Annonces [DÉMO] identifiées jusqu’à connexion à une source officielle.</p>
         </div>
-        <div class="bg-white p-3.5 rounded-2xl border space-y-2.5">
+        <div class="card bg-white p-3.5 rounded-2xl border space-y-2.5">
           <input value="${esc(f.q)}" oninput="db.filters.q=this.value;saveDB();renderOffersList()" placeholder="Rechercher un métier, mot-clé..." class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <div class="grid grid-cols-2 gap-2">
             <input value="${esc(f.city)}" oninput="db.filters.city=this.value;saveDB();renderOffersList()" placeholder="Ville" class="px-2.5 py-2 rounded-xl border text-xs"/>
-            <select onchange="db.filters.contract=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+            <select onchange="db.filters.contract=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs">
               <option value="">Tous contrats</option>
               <option ${f.contract==='STAGE'?'selected':''} value="STAGE">Stage</option>
               <option ${f.contract==='ALTERNANCE'?'selected':''} value="ALTERNANCE">Alternance</option>
               <option ${f.contract==='PREMIER_EMPLOI'?'selected':''} value="PREMIER_EMPLOI">1er emploi</option>
               <option ${f.contract==='IMMERSION'?'selected':''} value="IMMERSION">Immersion</option>
             </select>
-            <select onchange="db.filters.sector=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+            <select onchange="db.filters.sector=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs">
               <option value="">Tous secteurs</option>
               <option ${f.sector==='Numérique & Tech'?'selected':''}>Numérique & Tech</option>
               <option ${f.sector==='Design & Création'?'selected':''}>Design & Création</option>
               <option ${f.sector==='Marketing & Communication'?'selected':''}>Marketing & Communication</option>
               <option ${f.sector==='Commerce & Relation Client'?'selected':''}>Commerce & Relation Client</option>
             </select>
-            <select onchange="db.filters.level=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs bg-white">
+            <select onchange="db.filters.level=this.value;saveDB();renderOffersList()" class="px-2.5 py-2 rounded-xl border text-xs">
               <option value="">Tous niveaux</option>
               <option ${f.level==='Collège / Lycée'?'selected':''}>Collège / Lycée</option>
               <option ${f.level==='BTS / Bac+2'?'selected':''}>BTS / Bac+2</option>
@@ -578,21 +645,21 @@ function render() {
     const hasApplied = u && db.applications.some(a => a.userId === u.id && a.offerId === o.id);
     const match = computeMatch(o, u);
     app.innerHTML = `
-      <div class="bg-white rounded-2xl p-5 border space-y-4 fade">
-        <button onclick="go('offers')" class="text-xs font-semibold text-slate-500">← Retour aux offres</button>
+      <div class="card bg-white rounded-2xl p-5 border space-y-4 fade">
+        <button onclick="go('offers')" class="text-xs font-semibold muted">← Retour aux offres</button>
         <div class="flex flex-wrap gap-2 items-center">
           <span class="px-2.5 py-0.5 rounded-full bg-navy-900 text-white text-xs font-bold">${esc(o.contract)}</span>
           <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-extrabold">⚡ ${match.score}% Match (${esc(match.reasons.join(' • '))})</span>
           ${o.isDemo ? '<span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">DÉMO</span>' : ''}
         </div>
         <h1 class="text-xl font-extrabold">${esc(o.title)}</h1>
-        <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
-        <p class="text-sm text-slate-700 leading-relaxed border-t pt-3">${esc(o.desc)}</p>
+        <div class="text-xs muted">${esc(o.companyName)} • ${esc(o.city)} • ${esc(o.level)} • ${esc(o.duration)}</div>
+        <p class="text-sm leading-relaxed border-t pt-3">${esc(o.desc)}</p>
         <div class="space-y-2 border-t pt-3">
           <div class="flex justify-between items-center">
             <label class="text-xs font-bold">Message de candidature</label>
             <div class="flex gap-3">
-              <button onclick="copyText(document.getElementById('coverMsg').value)" class="text-xs font-semibold text-slate-500">📋 Copier</button>
+              <button onclick="copyText(document.getElementById('coverMsg').value)" class="text-xs font-semibold muted">📋 Copier</button>
               <button onclick="fillOfferCover('${o.id}')" class="text-xs font-semibold text-electric-500">✨ Rédiger avec l’IA</button>
             </div>
           </div>
@@ -606,16 +673,16 @@ function render() {
     const cvUser = u || db.users[0];
     app.innerHTML = `
       <div class="space-y-5 fade">
-        <div class="no-print bg-white p-5 rounded-2xl border space-y-3">
+        <div class="no-print card bg-white p-5 rounded-2xl border space-y-3">
           <div class="flex justify-between items-center">
             <h1 class="text-lg font-bold">Créateur de CV IA</h1>
             <button onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-electric-500 text-white text-xs font-semibold">Exporter PDF</button>
           </div>
           <div id="cvCompleteness"></div>
           <div class="grid grid-cols-3 gap-1.5">
-            <button onclick="setCVTheme('startup')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='startup'?'bg-navy-900 text-white':'bg-slate-50'}">Bleu Nuit</button>
-            <button onclick="setCVTheme('electric')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='electric'?'bg-electric-500 text-white':'bg-slate-50'}">Électrique</button>
-            <button onclick="setCVTheme('clean')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='clean'?'bg-navy-900 text-white':'bg-slate-50'}">Épuré</button>
+            <button onclick="setCVTheme('startup')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='startup'?'bg-navy-900 text-white':''}">Bleu Nuit</button>
+            <button onclick="setCVTheme('electric')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='electric'?'bg-electric-500 text-white':''}">Électrique</button>
+            <button onclick="setCVTheme('clean')" class="py-2 rounded-xl text-[11px] font-semibold border ${db.cvTheme==='clean'?'bg-navy-900 text-white':''}">Épuré</button>
           </div>
           <input value="${esc(cvUser.fullName)}" oninput="cvUserEdit('fullName',this.value)" placeholder="Nom" class="w-full px-3 py-2 rounded-xl border text-sm"/>
           <input value="${esc(cvUser.educationLevel)}" oninput="cvUserEdit('educationLevel',this.value)" placeholder="Formation" class="w-full px-3 py-2 rounded-xl border text-sm"/>
@@ -635,23 +702,23 @@ function render() {
   }
 
   else if (db.page === 'assistant') {
-    const tabs = [['coach','💬 Coach'],['spontaneous','✉️ Spontanée'],['interview','🎤 Entretien'],['quiz','🧭 Quiz']];
+    const tabs = [['coach','💬 Coach'],['spontaneous','✉️ Relance'],['interview','🎤 Entretien'],['quiz','🧭 Quiz'],['guide','📜 Guide']];
     let bodyHtml = '';
 
     if (db.aiTab === 'coach') {
       const modes = [['chat','Conseil'],['cover_letter','Lettre'],['interview','Questions'],['fix_message','Corriger']];
       bodyHtml = `
         <div class="flex justify-between items-center gap-2">
-          <span class="text-xs font-semibold text-slate-500">Niveau scolaire :</span>
-          <select id="aiLvl" class="px-2.5 py-1.5 rounded-xl border text-xs bg-slate-50">
+          <span class="text-xs font-semibold muted">Niveau scolaire :</span>
+          <select id="aiLvl" class="px-2.5 py-1.5 rounded-xl border text-xs">
             <option>Collège (3e)</option><option>Lycée</option><option>BTS / Bac+2</option><option>Licence / Master</option>
           </select>
         </div>
         <div class="flex flex-wrap gap-1.5">
-          ${modes.map(([id,lbl])=>`<button onclick="db.aiMode='${id}';saveDB();render()" class="px-3 py-1.5 rounded-xl text-xs font-semibold ${db.aiMode===id?'bg-navy-900 text-white':'bg-slate-100'}">${lbl}</button>`).join('')}
+          ${modes.map(([id,lbl])=>`<button onclick="db.aiMode='${id}';saveDB();render()" class="px-3 py-1.5 rounded-xl text-xs font-semibold ${db.aiMode===id?'bg-navy-900 text-white':'soft-box bg-slate-100'}">${lbl}</button>`).join('')}
         </div>
-        <div class="h-64 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
-          ${db.aiMessages.map((m,i)=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'bg-white border'}">${esc(m.text)}${m.role==='ai'?`<div class="mt-2 pt-1 border-t"><button onclick="copyText(db.aiMessages[${i}].text)" class="text-[10px] font-bold text-electric-500">📋 Copier la réponse</button></div>`:''}</div></div>`).join('')}
+        <div class="soft-box h-64 overflow-y-auto bg-slate-50 rounded-xl p-3 space-y-2.5">
+          ${db.aiMessages.map((m,i)=>`<div class="flex ${m.role==='user'?'justify-end':'justify-start'}"><div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs whitespace-pre-line ${m.role==='user'?'bg-electric-500 text-white':'card bg-white border'}">${esc(m.text)}${m.role==='ai'?`<div class="mt-2 pt-1 border-t border-slate-200/50"><button onclick="copyText(db.aiMessages[${i}].text)" class="text-[10px] font-bold text-electric-500">📋 Copier la réponse</button></div>`:''}</div></div>`).join('')}
         </div>
         <form onsubmit="sendAI(event)" class="flex gap-2">
           <input id="aiInput" required placeholder="Votre question ou brouillon..." class="flex-1 px-3 py-2.5 rounded-xl border text-xs"/>
@@ -662,29 +729,36 @@ function render() {
     else if (db.aiTab === 'spontaneous') {
       const sr = db.spontResult;
       bodyHtml = `
-        <div class="space-y-3">
-          <p class="text-xs text-slate-600">Génère 3 messages prêts à l’emploi pour démarcher directement une entreprise qui n’a pas publié d’annonce.</p>
-          <form onsubmit="generateSpontaneous(event)" class="space-y-2">
-            <input id="spComp" required placeholder="Nom de l’entreprise (ex : Boulangerie Paul, Décathlon...)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
-            <input id="spRole" required placeholder="Ce que tu cherches (ex : stage d’observation, alternance vente)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
-            <button class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">✨ Générer mon kit de contact</button>
-          </form>
-          ${sr ? `
-            <div class="space-y-2.5 pt-2">
-              <div class="p-3 rounded-xl bg-slate-50 border text-xs space-y-1.5">
-                <div class="flex justify-between font-bold"><span>📧 Email professionnel</span><button onclick="copyText(db.spontResult.email)" class="text-electric-500">📋 Copier</button></div>
-                <p class="whitespace-pre-line text-slate-700">${esc(sr.email)}</p>
-              </div>
-              <div class="p-3 rounded-xl bg-slate-50 border text-xs space-y-1.5">
-                <div class="flex justify-between font-bold"><span>💬 Message court (LinkedIn / Insta)</span><button onclick="copyText(db.spontResult.dm)" class="text-electric-500">📋 Copier</button></div>
-                <p class="text-slate-700">${esc(sr.dm)}</p>
-              </div>
-              <div class="p-3 rounded-xl bg-blue-50 border border-blue-100 text-xs space-y-1.5">
-                <div class="flex justify-between font-bold"><span>📞 Script pour oser téléphoner</span><button onclick="copyText(db.spontResult.call)" class="text-electric-500">📋 Copier</button></div>
-                <p class="text-navy-900">${esc(sr.call)}</p>
-              </div>
-            </div>
-          ` : ''}
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <h2 class="text-xs font-extrabold uppercase text-electric-500">1. Candidature Spontanée (Email + DM + Appel)</h2>
+            <form onsubmit="generateSpontaneous(event)" class="space-y-2">
+              <input id="spComp" required placeholder="Nom de l’entreprise (ex : Décathlon, Agence Web...)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+              <input id="spRole" required placeholder="Ce que tu cherches (ex : stage d’observation, alternance)" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+              <button class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">✨ Générer mon kit de contact</button>
+            </form>
+            ${sr ? `
+              <div class="space-y-2 pt-1">
+                <div class="soft-box p-3 rounded-xl bg-slate-50 border text-xs space-y-1"><div class="flex justify-between font-bold"><span>📧 Email</span><button onclick="copyText(db.spontResult.email)" class="text-electric-500">📋 Copier</button></div><p class="whitespace-pre-line">${esc(sr.email)}</p></div>
+                <div class="soft-box p-3 rounded-xl bg-slate-50 border text-xs space-y-1"><div class="flex justify-between font-bold"><span>💬 Message court</span><button onclick="copyText(db.spontResult.dm)" class="text-electric-500">📋 Copier</button></div><p>${esc(sr.dm)}</p></div>
+                <div class="soft-box p-3 rounded-xl bg-blue-50 border text-xs space-y-1"><div class="flex justify-between font-bold"><span>📞 Script appel</span><button onclick="copyText(db.spontResult.call)" class="text-electric-500">📋 Copier</button></div><p>${esc(sr.call)}</p></div>
+              </div>` : ''}
+          </div>
+
+          <hr class="border-slate-200/60"/>
+
+          <div class="space-y-2">
+            <h2 class="text-xs font-extrabold uppercase text-electric-500">2. Relancer après 7 jours sans réponse</h2>
+            <form onsubmit="generateFollowup(event)" class="space-y-2">
+              <input id="fuComp" required placeholder="Entreprise à relancer" class="w-full px-3 py-2 rounded-xl border text-xs"/>
+              <select id="fuKind" class="w-full px-3 py-2 rounded-xl border text-xs">
+                <option value="no_reply">Relance 7 jours après candidature</option>
+                <option value="after_interview">Remerciement / Relance après entretien</option>
+              </select>
+              <button class="w-full py-2.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">✨ Générer la relance</button>
+            </form>
+            ${db.followupText ? `<div class="soft-box p-3 rounded-xl bg-slate-50 border text-xs space-y-1"><div class="flex justify-between font-bold"><span>📩 Message de relance</span><button onclick="copyText(db.followupText)" class="text-electric-500">📋 Copier</button></div><p class="whitespace-pre-line">${esc(db.followupText)}</p></div>` : ''}
+          </div>
         </div>`;
     }
 
@@ -694,14 +768,14 @@ function render() {
       bodyHtml = `
         <div class="space-y-3">
           <div class="flex justify-between items-center">
-            <span class="text-xs font-bold text-navy-900">Simulateur interactif (4 questions)</span>
+            <span class="text-xs font-bold">Simulateur interactif (4 questions)</span>
             <button onclick="resetSim()" class="text-xs text-electric-500 font-semibold">Recommencer</button>
           </div>
           <div class="space-y-2.5 max-h-72 overflow-y-auto">
             ${db.sim.history.map(item => `
-              <div class="p-3 rounded-xl bg-slate-50 border space-y-1.5 text-xs">
-                <div class="font-bold text-navy-900">${esc(item.q)}</div>
-                <div class="text-slate-700 italic">« ${esc(item.a)} »</div>
+              <div class="soft-box p-3 rounded-xl bg-slate-50 border space-y-1.5 text-xs">
+                <div class="font-bold">${esc(item.q)}</div>
+                <div class="italic muted">« ${esc(item.a)} »</div>
                 <div class="p-2 rounded-lg bg-blue-50 text-navy-900"><strong>Note ${item.score}/100 :</strong> ${esc(item.feedback)}</div>
               </div>
             `).join('')}
@@ -713,10 +787,10 @@ function render() {
               <button class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Valider ma réponse</button>
             </form>
           ` : `
-            <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
-              <div class="text-lg font-extrabold text-emerald-800">Score moyen : ${avg}/100 🎉</div>
-              <p class="text-xs text-emerald-900">Bravo ! Tu es prêt(e) à passer ton entretien réel.</p>
-              <button onclick="resetSim()" class="px-4 py-2 rounded-xl bg-navy-900 text-white text-xs font-semibold">Refaire une simulation</button>
+            <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-2 text-emerald-900">
+              <div class="text-lg font-extrabold">Score moyen : ${avg}/100 🎉</div>
+              <p class="text-xs">Bravo ! Tu es prêt(e) à passer ton entretien réel.</p>
+              <button onclick="resetSim()" class="px-4 py-2 rounded-xl bg-navy-900 text-white text-xs font-semibold">Refaire</button>
             </div>
           `}
         </div>`;
@@ -740,20 +814,43 @@ function render() {
         const qObj = QUIZ_QUESTIONS[db.quiz.step];
         bodyHtml = `
           <div class="space-y-3">
-            <div class="text-sm font-bold text-navy-900">${esc(qObj.q)}</div>
+            <div class="text-sm font-bold">${esc(qObj.q)}</div>
             <div class="space-y-2">
               ${qObj.opts.map(([cat, lbl]) => `
-                <button onclick="pickQuizOption('${cat}')" class="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-electric-500 hover:bg-blue-50 text-xs font-medium transition">${esc(lbl)}</button>
+                <button onclick="pickQuizOption('${cat}')" class="soft-box w-full text-left p-3.5 rounded-xl border text-xs font-medium transition">${esc(lbl)}</button>
               `).join('')}
             </div>
           </div>`;
       }
     }
 
+    else if (db.aiTab === 'guide') {
+      const checkedCount = db.checklist.filter(Boolean).length;
+      const pct = Math.round((checkedCount / GUIDE_STEPS.length) * 100);
+      bodyHtml = `
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs font-bold mb-1"><span>Checklist Convention & Démarches</span><span class="text-electric-500">${pct}%</span></div>
+            <div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-emerald-500" style="width:${pct}%"></div></div>
+          </div>
+          <div class="space-y-2">
+            ${GUIDE_STEPS.map((txt, i) => `
+              <button onclick="toggleGuideStep(${i})" class="soft-box w-full text-left p-3 rounded-xl border flex items-center gap-2.5 text-xs ${db.checklist[i]?'opacity-75 line-through':''}">
+                <span class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${db.checklist[i]?'bg-emerald-500 text-white':'border border-slate-300'}">${db.checklist[i]?'✓':''}</span>
+                <span>${esc(txt)}</span>
+              </button>
+            `).join('')}
+          </div>
+          <div class="p-3 rounded-xl bg-blue-50 text-navy-900 text-[11px]">
+            💡 <strong>Rappel 15–17 ans :</strong> pas de travail sans convention signée, pause obligatoire de 30 min après 4h30 de présence, et encadrement par un tuteur désigné.
+          </div>
+        </div>`;
+    }
+
     app.innerHTML = `
-      <div class="bg-white rounded-2xl p-4 border space-y-3 fade">
-        <div class="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl">
-          ${tabs.map(([id,lbl])=>`<button onclick="db.aiTab='${id}';saveDB();render()" class="py-2 rounded-lg text-[11px] font-bold ${db.aiTab===id?'bg-white text-navy-900 shadow-sm':'text-slate-500'}">${lbl}</button>`).join('')}
+      <div class="card bg-white rounded-2xl p-4 border space-y-3 fade">
+        <div class="grid grid-cols-5 gap-1 soft-box bg-slate-100 p-1 rounded-xl">
+          ${tabs.map(([id,lbl])=>`<button onclick="db.aiTab='${id}';saveDB();render()" class="py-2 rounded-lg text-[10px] font-bold ${db.aiTab===id?'card bg-white shadow-sm':'muted'}">${lbl}</button>`).join('')}
         </div>
         ${bodyHtml}
       </div>`;
@@ -766,35 +863,35 @@ function render() {
     const statuses = ['ENVOYEE','EN_ATTENTE','ENTRETIEN','REPONSE_RECUE','REFUSEE'];
     app.innerHTML = `
       <div class="space-y-4 fade">
-        <div class="grid grid-cols-2 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
-          <button onclick="db.appTab='apps';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='apps'?'bg-white shadow-sm':'text-slate-600'}">Candidatures (${apps.length})</button>
-          <button onclick="db.appTab='saved';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='saved'?'bg-white shadow-sm':'text-slate-600'}">Favoris (${savedList.length})</button>
+        <div class="grid grid-cols-2 gap-1.5 soft-box bg-slate-200/70 p-1 rounded-xl">
+          <button onclick="db.appTab='apps';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='apps'?'card bg-white shadow-sm':'muted'}">Candidatures (${apps.length})</button>
+          <button onclick="db.appTab='saved';saveDB();render()" class="py-2 rounded-lg text-xs font-bold ${db.appTab==='saved'?'card bg-white shadow-sm':'muted'}">Favoris (${savedList.length})</button>
         </div>
 
         ${db.appTab === 'apps' ? (
           apps.map(a => {
             const o = db.offers.find(x => x.id === a.offerId) || { title: 'Offre', companyName: '' };
             return `
-            <div class="bg-white p-4 rounded-2xl border space-y-2">
+            <div class="card bg-white p-4 rounded-2xl border space-y-2">
               <div class="flex justify-between items-start gap-2">
-                <div><div class="font-bold text-sm">${esc(o.title)}</div><div class="text-xs text-slate-500">${esc(o.companyName)}</div></div>
-                <select onchange="changeAppStatus('${a.id}',this.value)" class="px-2.5 py-1.5 rounded-lg border text-xs font-semibold bg-slate-50">
+                <div><div class="font-bold text-sm">${esc(o.title)}</div><div class="text-xs muted">${esc(o.companyName)}</div></div>
+                <select onchange="changeAppStatus('${a.id}',this.value)" class="px-2.5 py-1.5 rounded-lg border text-xs font-semibold">
                   ${statuses.map(s=>`<option ${a.status===s?'selected':''}>${s}</option>`).join('')}
                 </select>
               </div>
-              ${a.reply ? `<div class="p-2.5 rounded-xl bg-blue-50 text-xs"><strong>Réponse :</strong> ${esc(a.reply)}</div>` : ''}
+              ${a.reply ? `<div class="p-2.5 rounded-xl bg-blue-50 text-navy-900 text-xs"><strong>Réponse :</strong> ${esc(a.reply)}</div>` : ''}
             </div>`;
-          }).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune candidature envoyée. Explorez les offres !</div>'
+          }).join('') || '<div class="card bg-white p-6 rounded-2xl text-center text-xs muted">Aucune candidature envoyée. Explorez les offres !</div>'
         ) : (
           savedList.map(o => `
-            <div class="bg-white p-4 rounded-2xl border flex justify-between items-center gap-2">
+            <div class="card bg-white p-4 rounded-2xl border flex justify-between items-center gap-2">
               <div onclick="go('offer_detail','${o.id}')" class="cursor-pointer">
                 <div class="font-bold text-sm">${esc(o.title)}</div>
-                <div class="text-xs text-slate-500">${esc(o.companyName)} • ${esc(o.city)}</div>
+                <div class="text-xs muted">${esc(o.companyName)} • ${esc(o.city)}</div>
               </div>
               <button onclick="go('offer_detail','${o.id}')" class="px-3 py-1.5 rounded-xl bg-electric-500 text-white text-xs font-semibold">Ouvrir</button>
             </div>
-          `).join('') || '<div class="bg-white p-6 rounded-2xl text-center text-xs text-slate-500">Aucune offre sauvegardée pour l’instant.</div>'
+          `).join('') || '<div class="card bg-white p-6 rounded-2xl text-center text-xs muted">Aucune offre sauvegardée.</div>'
         )}
       </div>`;
   }
@@ -803,11 +900,11 @@ function render() {
     if (!u) return go('auth');
     const age = calcAge(u.birthDate);
     app.innerHTML = `
-      <div class="bg-white rounded-2xl p-5 border space-y-4 fade">
+      <div class="card bg-white rounded-2xl p-5 border space-y-4 fade">
         <div class="flex justify-between items-center">
           <div>
             <h1 class="text-lg font-bold">${esc(u.fullName)}</h1>
-            <p class="text-xs text-slate-500">${age!==null ? age+' ans (date de naissance masquée)' : 'Profil Pro'} • Plan ${esc(u.plan)}</p>
+            <p class="text-xs muted">${age!==null ? age+' ans (date de naissance masquée)' : 'Profil Pro'} • Plan ${esc(u.plan)}</p>
           </div>
           <button onclick="db.currentUserId=null;saveDB();go('auth')" class="px-3 py-1.5 rounded-xl border text-xs font-semibold">Déconnexion</button>
         </div>
@@ -818,7 +915,7 @@ function render() {
           <label class="font-semibold block pt-1">Formation</label>
           <input value="${esc(u.educationLevel||'')}" onchange="cvUserEdit('educationLevel',this.value)" class="w-full px-3 py-2 rounded-xl border"/>
           <label class="font-semibold block pt-1">Contrat recherché</label>
-          <select onchange="cvUserEdit('contractType',this.value)" class="w-full px-3 py-2 rounded-xl border bg-white">
+          <select onchange="cvUserEdit('contractType',this.value)" class="w-full px-3 py-2 rounded-xl border">
             <option ${u.contractType==='STAGE'?'selected':''} value="STAGE">Stage</option>
             <option ${u.contractType==='ALTERNANCE'?'selected':''} value="ALTERNANCE">Alternance</option>
             <option ${u.contractType==='PREMIER_EMPLOI'?'selected':''} value="PREMIER_EMPLOI">Premier emploi</option>
@@ -827,47 +924,47 @@ function render() {
         </div>
         <div class="pt-3 border-t flex justify-between items-center">
           <button onclick="deleteMyAccount()" class="px-3.5 py-2 rounded-xl bg-red-600 text-white text-xs font-semibold">Supprimer compte (RGPD)</button>
-          <button onclick="localStorage.removeItem(DB_KEY);location.reload()" class="text-xs text-slate-400 underline">Réinitialiser démo</button>
+          <button onclick="localStorage.removeItem(DB_KEY);location.reload()" class="text-xs muted underline">Réinitialiser démo</button>
         </div>
       </div>`;
   }
 
   else if (db.page === 'company') {
     if (!u || u.role !== 'COMPANY') {
-      app.innerHTML = `<div class="bg-white p-6 rounded-2xl border text-center space-y-3 fade"><h1 class="font-bold">Espace Entreprise</h1><p class="text-xs text-slate-600">Connectez-vous avec le compte Pro démo pour publier et gérer les candidatures.</p><button onclick="loginDemo('u_pro')" class="px-4 py-2.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">Accéder en mode Pro (NovaTech)</button></div>`;
+      app.innerHTML = `<div class="card bg-white p-6 rounded-2xl border text-center space-y-3 fade"><h1 class="font-bold">Espace Entreprise</h1><p class="text-xs muted">Connectez-vous avec le compte Pro démo pour publier et gérer les candidatures.</p><button onclick="loginDemo('u_pro')" class="px-4 py-2.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">Accéder en mode Pro (NovaTech)</button></div>`;
     } else {
       const myOffers = db.offers.filter(o => o.companyId === u.id);
       const myApps = db.applications.filter(a => myOffers.some(o => o.id === a.offerId));
       app.innerHTML = `
         <div class="space-y-4 fade">
-          <div class="bg-white p-4 rounded-2xl border flex justify-between items-center">
-            <div><h1 class="font-bold">${esc(u.company.name)}</h1><p class="text-xs text-slate-500">${u.company.verified ? '✅ Entreprise vérifiée' : '⏳ Validation requise'}</p></div>
+          <div class="card bg-white p-4 rounded-2xl border flex justify-between items-center">
+            <div><h1 class="font-bold">${esc(u.company.name)}</h1><p class="text-xs muted">${u.company.verified ? '✅ Entreprise vérifiée' : '⏳ Validation requise'}</p></div>
             ${!u.company.verified ? `<button onclick="verifyCompany()" class="px-3 py-1.5 rounded-xl bg-navy-900 text-white text-xs font-semibold">Valider (Démo)</button>` : ''}
           </div>
-          <form onsubmit="publishOffer(event)" class="bg-white p-4 rounded-2xl border space-y-2.5">
+          <form onsubmit="publishOffer(event)" class="card bg-white p-4 rounded-2xl border space-y-2.5">
             <h2 class="font-bold text-sm">Publier une offre</h2>
             <input id="poTitle" required placeholder="Intitulé du poste" class="w-full px-3 py-2 rounded-xl border text-xs"/>
             <div class="grid grid-cols-2 gap-2">
               <input id="poCity" required placeholder="Ville" class="px-3 py-2 rounded-xl border text-xs"/>
-              <select id="poContract" class="px-3 py-2 rounded-xl border text-xs bg-white"><option value="STAGE">Stage</option><option value="ALTERNANCE">Alternance</option><option value="IMMERSION">Immersion</option></select>
+              <select id="poContract" class="px-3 py-2 rounded-xl border text-xs"><option value="STAGE">Stage</option><option value="ALTERNANCE">Alternance</option><option value="IMMERSION">Immersion</option></select>
             </div>
             <textarea id="poDesc" required rows="2" placeholder="Description..." class="w-full p-2.5 rounded-xl border text-xs"></textarea>
             <button ${!u.company.verified?'disabled':''} class="w-full py-2.5 rounded-xl bg-electric-500 text-white text-xs font-semibold disabled:opacity-40">Publier l’annonce</button>
           </form>
-          <div class="bg-white p-4 rounded-2xl border space-y-2">
+          <div class="card bg-white p-4 rounded-2xl border space-y-2">
             <h2 class="font-bold text-sm">Candidatures reçues (${myApps.length})</h2>
             ${myApps.map(a => {
               const cand = db.users.find(x => x.id === a.userId);
               const minor = isMinor(cand);
-              return `<div class="p-3 rounded-xl border text-xs space-y-1">
+              return `<div class="soft-box p-3 rounded-xl border text-xs space-y-1">
                 <div class="font-bold">${esc(cand?.fullName)} (${esc(cand?.educationLevel)})</div>
-                <div class="bg-slate-50 p-2 rounded"><strong>Contact :</strong> ${minor ? '🛡️ Mineur – via référent : '+esc(cand?.guardianEmail) : esc(cand?.email)}</div>
+                <div class="p-2 rounded bg-white/60 text-navy-900"><strong>Contact :</strong> ${minor ? '🛡️ Mineur – via référent : '+esc(cand?.guardianEmail) : esc(cand?.email)}</div>
                 <div class="flex gap-2 pt-1">
                   <button onclick="replyApp('${a.id}','ENTRETIEN')" class="px-2.5 py-1 rounded bg-emerald-600 text-white">Proposer entretien</button>
-                  <button onclick="replyApp('${a.id}','REFUSEE')" class="px-2.5 py-1 rounded bg-slate-200">Refuser</button>
+                  <button onclick="replyApp('${a.id}','REFUSEE')" class="px-2.5 py-1 rounded bg-slate-200 text-navy-900">Refuser</button>
                 </div>
               </div>`;
-            }).join('') || '<p class="text-xs text-slate-500">Aucune candidature reçue.</p>'}
+            }).join('') || '<p class="text-xs muted">Aucune candidature reçue.</p>'}
           </div>
         </div>`;
     }
@@ -877,10 +974,10 @@ function render() {
     const isPrem = u?.plan === 'PREMIUM';
     app.innerHTML = `
       <div class="space-y-4 fade">
-        <div class="text-center"><h1 class="text-xl font-extrabold">Gratuit vs Premium</h1><p class="text-xs text-slate-500">Aucun paiement réel activé dans ce prototype.</p></div>
-        <div class="bg-white p-5 rounded-2xl border space-y-2">
+        <div class="text-center"><h1 class="text-xl font-extrabold">Gratuit vs Premium</h1><p class="text-xs muted">Aucun paiement réel activé dans ce prototype.</p></div>
+        <div class="card bg-white p-5 rounded-2xl border space-y-2">
           <div class="font-bold">Gratuit – 0 €/mois</div>
-          <p class="text-xs text-slate-600">Recherche d’offres • CV simple PDF • Suivi des candidatures • Conseils de base.</p>
+          <p class="text-xs muted">Recherche d’offres • CV simple PDF • Suivi des candidatures • Conseils de base.</p>
         </div>
         <div class="bg-navy-900 text-white p-5 rounded-2xl border-2 border-electric-500 space-y-3">
           <div class="font-bold text-lg">StagePilot Premium – 4,99 €/mois (Aperçu gratuit)</div>
@@ -894,7 +991,7 @@ function render() {
 }
 
 function loginDemo(id) { db.currentUserId = id; saveDB(); toast('Connecté !'); go(id === 'u_pro' ? 'company' : 'dashboard'); }
-function registerUser(e) {
+async function registerUser(e) {
   e.preventDefault();
   const role = document.getElementById('regRole').value;
   const dob = document.getElementById('regDob')?.value || '';
@@ -902,17 +999,31 @@ function registerUser(e) {
   if (role === 'CANDIDATE' && dob && calcAge(dob) < 18 && !guardian.includes('@')) {
     return toast('Protection mineur : email du parent/référent requis.');
   }
+  const email = document.getElementById('regEmail').value;
+  const password = document.getElementById('regPass').value || 'StagePilot2026!';
+  const fullName = document.getElementById('regName').value;
+  const city = document.getElementById('regCity').value;
+  const educationLevel = document.getElementById('regLevel')?.value || 'Lycée';
+
+  if (sb) {
+    try {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (!error && data.user) {
+        await sb.from('profiles').insert({
+          id: data.user.id, role, full_name: fullName, city,
+          education_level: educationLevel, guardian_email: guardian || null,
+          is_minor: dob ? calcAge(dob) < 18 : false
+        });
+      }
+    } catch {}
+  }
+
   const id = 'u_' + Date.now();
   db.users.push({
-    id, role,
-    email: document.getElementById('regEmail').value,
-    fullName: document.getElementById('regName').value,
-    city: document.getElementById('regCity').value,
-    birthDate: dob, guardianEmail: guardian,
-    educationLevel: document.getElementById('regLevel')?.value || 'Lycée',
+    id, role, email, fullName, city, birthDate: dob, guardianEmail: guardian, educationLevel,
     contractType: 'STAGE', availability: 'Dès que possible',
     plan: 'FREE', summary: 'Motivé(e) pour apprendre en entreprise.', skills: 'Sérieux, Travail en équipe', languages: 'Français', interests: '', experiences: [],
-    ...(role === 'COMPANY' ? { company: { name: document.getElementById('regCompName').value || document.getElementById('regName').value, sector: 'Tech', city: document.getElementById('regCity').value, verified: false } } : {})
+    ...(role === 'COMPANY' ? { company: { name: document.getElementById('regCompName').value || fullName, sector: 'Tech', city, verified: false } } : {})
   });
   db.currentUserId = id; saveDB(); toast('Compte créé !'); go(role === 'COMPANY' ? 'company' : 'dashboard');
 }
@@ -972,14 +1083,27 @@ function sendAI(e) {
   saveDB(); render();
 }
 function verifyCompany() { const u = currentUser(); if (u?.company) { u.company.verified = true; saveDB(); render(); } }
-function publishOffer(e) {
+async function publishOffer(e) {
   e.preventDefault(); const u = currentUser();
+  const title = document.getElementById('poTitle').value;
+  const city = document.getElementById('poCity').value;
+  const contract = document.getElementById('poContract').value;
+  const desc = document.getElementById('poDesc').value;
+
+  if (sb) {
+    try {
+      await sb.from('offers').insert({
+        company_id: u.id, company_name: u.company.name, title, city,
+        sector: 'Numérique & Tech', education_level: 'Collège / Lycée',
+        contract_type: contract, duration: '2 mois', description: desc, is_active: true
+      });
+    } catch {}
+  }
+
   db.offers.unshift({
     id: 'o_' + Date.now(), companyId: u.id, companyName: u.company.name,
-    title: document.getElementById('poTitle').value, city: document.getElementById('poCity').value,
-    sector: 'Numérique & Tech', level: 'Collège / Lycée',
-    contract: document.getElementById('poContract').value, duration: '2 mois',
-    isDemo: false, desc: document.getElementById('poDesc').value
+    title, city, sector: 'Numérique & Tech', level: 'Collège / Lycée',
+    contract, duration: '2 mois', isDemo: false, desc
   });
   saveDB(); toast('✅ Offre publiée !'); render();
 }
@@ -1000,6 +1124,7 @@ function deleteMyAccount() {
 }
 
 render();
+syncFromSupabase();
 </script>
 </body>
 </html>
